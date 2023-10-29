@@ -20,6 +20,7 @@ use std::{
     iter::ExactSizeIterator,
 };
 
+#[cfg(test)]
 pub(crate) mod test_util;
 
 /// u64 have 64 bits, and therefore are used to store 64 elements in the bloom filter.
