@@ -2,8 +2,12 @@
 name = "bloom-filter"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Thomas Pendock"]
+description = "Bloom Filter for Rust"
+homepage = "https://github.com/thomaspendock/bloom-filter"
+repository = "https://github.com/thomaspendock/bloom-filter"
+keywords = ["bloom", "filter"]
+readme = "README.md"
 
 [dependencies]
 rand_regex = "0.16.0"
@@ -15,7 +19,6 @@ siphasher = "0.3.10"
 
 [dev-dependencies]
 criterion = { version = "0.4", features = ["html_reports"] }
-bloomfilter = "1.0.12"
 
 [[bench]]
 name = "bench_main"
