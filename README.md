@@ -61,3 +61,21 @@ As the memory size and contained numbers increases, bloom filters need to perfor
 
 This Bloom Filter does not sacrifice accuracy. Below we compare false positive rate with a traditional (control) bloom filter:
 > ![Figure_1](https://github.com/thomaspendock/bloom-filter/assets/45644087/45bdd45e-1993-46d7-ad29-d0f13c2e729b)
+
+
+## License
+
+Licensed under either of
+
+ * Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
