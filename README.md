@@ -52,7 +52,12 @@ BloomFilter (1000 items, 2097152 bytes): get non-existing 1000
 +                       change: [-98.997% -98.993% -98.989%] (p = 0.00 < 0.05)
                         Performance has improved.
 ```
+As the memory size and contained numbers increases, bloom filters need to perform more hashes to keep false positive rates low. Bloom filter speed is directly proportional to number of hashes. `bloom-filter`'s optimal number of hashes is bounded and keeps near zero rates even for large sizes:
+> ![perf](https://github.com/thomaspendock/bloom-filter/assets/45644087/915a9276-47bd-431c-9e60-5b29f6a64c2f)
+
+
+
 ### False Positive Performance
 
-This Bloom Filter does not sacrifice false positive rate. Below we compare false positive rate with a traditional (control) bloom filter:
-![Figure_1](https://github.com/thomaspendock/bloom-filter/assets/45644087/45bdd45e-1993-46d7-ad29-d0f13c2e729b)
+This Bloom Filter does not sacrifice accuracy. Below we compare false positive rate with a traditional (control) bloom filter:
+> ![Figure_1](https://github.com/thomaspendock/bloom-filter/assets/45644087/45bdd45e-1993-46d7-ad29-d0f13c2e729b)
