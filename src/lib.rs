@@ -192,7 +192,7 @@ pub struct BloomFilter {
 
 impl BloomFilter {
     /// Returns the number of hashes per element in the bloom filter.
-    /// The returned value is always a multiple of two due to internal
+    /// The returned value is always a multiple of 4 due to internal
     /// optimizations.
     pub fn num_hashes(&self) -> u64 {
         self.num_hashes
