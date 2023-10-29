@@ -4,9 +4,8 @@ A very fast and accurate Bloom Filter implementation in Rust.
 
 ### Usage
 
-Add this to your Cargo.toml:
-
 ```toml
+# Cargo.toml
 [dependencies]
 bloom_filter = "0.1.0"
 ```
