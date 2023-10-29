@@ -1,4 +1,4 @@
-use bloom_filter::Builder;
+use bloom_filter::BloomFilter;
 use criterion::{black_box, criterion_group, Criterion};
 use rand::{Rng, SeedableRng};
 use std::collections::HashSet;
@@ -17,10 +17,8 @@ fn bench_some_get(c: &mut Criterion) {
     for (num_items, bloom_size_bytes) in [(1000, 1 << 16), (1000, 2097152)] {
         let sample_vals = random_strings(num_items, 12, *b"seedseedseedseed");
         let block_size = bloom_size_bytes / 64;
-        let bloom = Builder::new(block_size).items(sample_vals.iter());
+        let bloom = BloomFilter::builder(block_size).items(sample_vals.iter());
         let mut control: HashSet<String> = HashSet::new();
-
-        println!("{:?}", bloom.num_hashes());
         for i in 0..num_items {
             control.insert(sample_vals[i].clone());
         }
@@ -36,7 +34,7 @@ fn bench_some_get(c: &mut Criterion) {
             }
         }
         let fp = (false_positives as f64) / (total as f64);
-        println!("Sampled False Postive Rate: {:.6}%", 100 * fp);
+        println!("Sampled False Postive Rate: {:.6}%", 100.0 * fp);
         c.bench_function(
             &format!(
                 "BloomFilter ({:?} items, {:?} bytes): get existing 1000",
@@ -58,7 +56,7 @@ fn bench_none_get(c: &mut Criterion) {
     for (num_items, bloom_size_bytes) in [(1000, 1 << 16), (1000, 2097152)] {
         let sample_vals = random_strings(num_items, 12, *b"seedseedseedseed");
         let block_size = bloom_size_bytes / 64;
-        let bloom = Builder::new(block_size).items(sample_vals.iter());
+        let bloom = BloomFilter::builder(block_size).items(sample_vals.iter());
         let mut control: HashSet<String> = HashSet::new();
 
         for i in 0..num_items {
@@ -77,7 +75,7 @@ fn bench_none_get(c: &mut Criterion) {
             }
         }
         let fp = (false_positives as f64) / (total as f64);
-        println!("Sampled False Postive Rate: {:.6}%", 100 * fp);
+        println!("Sampled False Postive Rate: {:.6}%", 100.0 * fp);
         c.bench_function(
             &format!(
                 "BloomFilter ({:?} items, {:?} bytes): get non-existing 1000",
