@@ -1,4 +1,4 @@
-use bloom_filter::BloomFilter;
+use bloom_filter::Builder;
 use criterion::{black_box, criterion_group, Criterion};
 use rand::{Rng, SeedableRng};
 use std::collections::HashSet;
@@ -17,7 +17,7 @@ fn bench_some_get(c: &mut Criterion) {
     for (num_items, bloom_size_bytes) in [(1000, 1 << 16), (1000, 2097152)] {
         let sample_vals = random_strings(num_items, 12, *b"seedseedseedseed");
         let block_size = bloom_size_bytes / 64;
-        let bloom = BloomFilter::from_vec(block_size, &sample_vals);
+        let bloom = Builder::new(block_size).items(sample_vals.iter());
         let mut control: HashSet<String> = HashSet::new();
 
         println!("{:?}", bloom.num_hashes());
@@ -27,7 +27,6 @@ fn bench_some_get(c: &mut Criterion) {
         let sample_anti_vals = random_strings(1000, 16, *b"antiantiantianti");
         let mut total = 0;
         let mut false_positives = 0;
-        let mut false_positives_control = 0;
         for x in &sample_anti_vals {
             if !control.contains(x) {
                 total += 1;
@@ -36,7 +35,8 @@ fn bench_some_get(c: &mut Criterion) {
                 }
             }
         }
-        println!("Sampled False Postive Rate: {:.6}%", 100 * false_positives,);
+        let fp = (false_positives as f64) / (total as f64);
+        println!("Sampled False Postive Rate: {:.6}%", 100 * fp);
         c.bench_function(
             &format!(
                 "BloomFilter ({:?} items, {:?} bytes): get existing 1000",
@@ -58,7 +58,7 @@ fn bench_none_get(c: &mut Criterion) {
     for (num_items, bloom_size_bytes) in [(1000, 1 << 16), (1000, 2097152)] {
         let sample_vals = random_strings(num_items, 12, *b"seedseedseedseed");
         let block_size = bloom_size_bytes / 64;
-        let bloom = BloomFilter::from_vec(block_size, &sample_vals);
+        let bloom = Builder::new(block_size).items(sample_vals.iter());
         let mut control: HashSet<String> = HashSet::new();
 
         for i in 0..num_items {
@@ -68,7 +68,6 @@ fn bench_none_get(c: &mut Criterion) {
         let sample_anti_vals = random_strings(1000, 16, *b"antiantiantianti");
         let mut total = 0;
         let mut false_positives = 0;
-        let mut false_positives_control = 0;
         for x in &sample_anti_vals {
             if !control.contains(x) {
                 total += 1;
@@ -77,7 +76,8 @@ fn bench_none_get(c: &mut Criterion) {
                 }
             }
         }
-        println!("Sampled False Postive Rate: {:.6}%", 100 * false_positives,);
+        let fp = (false_positives as f64) / (total as f64);
+        println!("Sampled False Postive Rate: {:.6}%", 100 * fp);
         c.bench_function(
             &format!(
                 "BloomFilter ({:?} items, {:?} bytes): get non-existing 1000",

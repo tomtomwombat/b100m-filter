@@ -1,11 +1,23 @@
 //! A very fast bloom filter for Rust.
-//! Implemented with L1 cache friendly blocks and efficient hashing.
+//! Implemented with L1 cache friendly 512 bit blocks and efficient hashing.
 //!
+//! ```
+//! use bloom_filter::{BloomFilter, Builder};
 //!
+//! let num_blocks = 4; // each block is 64 bytes, 512 bits
+//! let values = vec!["42", "qwerty", "bloom"];
+//!
+//! let filter: BloomFilter = Builder::new(num_blocks).items(values.iter());
+//! assert!(filter.contains("42"));
+//! assert!(filter.contains("bloom"));
+//! ```
 
 use getrandom::getrandom;
 use siphasher::sip::SipHasher13;
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    iter::ExactSizeIterator,
+};
 
 pub(crate) mod test_util;
 
@@ -66,42 +78,119 @@ fn floor_round_2(x: f64) -> u64 {
     }
 }
 
-pub struct BloomFilter {
-    mem: Vec<[u64; BLOCK_SIZE]>,
-    num_hashes: u64,
-    hashers: [SipHasher13; 2],
+#[derive(Debug)]
+pub struct Builder {
+    num_blocks: usize,
+    seeds: [[u8; 16]; 2],
 }
 
-impl BloomFilter {
-    /// Constructs a bloom filter from the number of blocks (where each block is 512 bits),
-    /// and the number of hashes. For performance, the actual number of hashes performed internally will be
-    /// rounded to down to the nearest even number.
-    pub fn with_num_hashes(num_blocks: usize, num_hashes: u64) -> Self {
-        let mut seed1 = [0u8; 16];
-        let mut seed2 = [0u8; 16];
-        getrandom(&mut seed1).unwrap();
-        getrandom(&mut seed2).unwrap();
+impl Builder {
+    /// Creates a new instance of `Builder` to construct a `BloomFilter`
+    /// with `num_blocks` number of blocks for tracking item membership.
+    /// Each block is 512 bits of memory.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bloom_filter::{BloomFilter, Builder};
+    ///
+    /// let builder = Builder::new(16);
+    /// let bloom: BloomFilter = builder.hashes(4);
+    /// ```
+    pub fn new(num_blocks: usize) -> Self {
+        let mut seeds = [[0u8; 16]; 2];
+        getrandom(&mut seeds[0]).unwrap();
+        getrandom(&mut seeds[1]).unwrap();
+        Self { num_blocks, seeds }
+    }
+
+    /// Sets the seed for this builder. The later constructed `BloomFilter`
+    /// will use this seed when hashing items.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bloom_filter::{BloomFilter, Builder};
+    ///
+    /// let builder = Builder::new(16).seed(&[[0u8; 16]; 2]);
+    /// let bloom: BloomFilter = builder.hashes(4);
+    /// ```
+    pub fn seed(mut self, seeds: &[[u8; 16]; 2]) -> Self {
+        self.seeds.copy_from_slice(seeds);
+        self
+    }
+
+    /// "Consumes" this builder, using the provided `num_hashes` to return an
+    /// empty `BloomFilter`. For performance, the actual number of
+    /// hashes performed internally will be rounded to down to the nearest
+    /// multiple of 4.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bloom_filter::{BloomFilter, Builder};
+    ///
+    /// let builder = Builder::new(16);
+    /// let bloom: BloomFilter = builder.hashes(4);
+    /// ```
+    pub fn hashes(self, num_hashes: u64) -> BloomFilter {
         let hashers = [
-            SipHasher13::new_with_key(&seed1),
-            SipHasher13::new_with_key(&seed2),
+            SipHasher13::new_with_key(&self.seeds[0]),
+            SipHasher13::new_with_key(&self.seeds[1]),
         ];
-        Self {
-            mem: vec![[0u64; BLOCK_SIZE]; num_blocks],
+        BloomFilter {
+            mem: vec![[0u64; BLOCK_SIZE]; self.num_blocks],
             num_hashes,
+            seeds: self.seeds,
             hashers,
         }
     }
 
-    /// Constructs a bloom filter from the number of blocks (where each block is 512 bits),
-    /// and all the items from `vals`. The number of hashes is set for the optimal false
-    /// positive rate based on the number on `vals.len()`.
-    pub fn from_vec(num_blocks: usize, vals: &[impl Hash]) -> Self {
-        let num_hashes = optimal_hashes(BLOCK_SIZE * 64, vals.len() / num_blocks);
-        let mut filter = Self::with_num_hashes(num_blocks, num_hashes);
-        filter.insert_all(vals);
-        filter
+    /// "Consumes" this builder, using the provided `expected_num_items` to return an
+    /// empty `BloomFilter`. More or less than `expected_num_items` may be inserted into
+    /// `BloomFilter`, but the number of hashes per item is intially calculated
+    /// to minimize false positive rate for exactly `expected_num_items`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bloom_filter::{BloomFilter, Builder};
+    ///
+    /// let builder = Builder::new(16);
+    /// let bloom: BloomFilter = builder.expected_items(500);
+    /// ```
+    pub fn expected_items(self, expected_num_items: usize) -> BloomFilter {
+        let num_hashes = optimal_hashes(BLOCK_SIZE * 64, expected_num_items / self.num_blocks);
+        self.hashes(num_hashes)
     }
 
+    /// "Consumes" this builder and constructs a `BloomFilter` containing
+    /// all values in `items`. The number of hashes per item is calculated
+    /// based on `items.len()` to minimize false positive rate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bloom_filter::{BloomFilter, Builder};
+    ///
+    /// let builder = Builder::new(16);
+    /// let bloom: BloomFilter = builder.items([1, 2, 3].iter());
+    /// ```
+    pub fn items<I: ExactSizeIterator<Item = impl Hash>>(self, items: I) -> BloomFilter {
+        let mut filter = self.expected_items(items.len());
+        filter.extend(items);
+        filter
+    }
+}
+
+pub struct BloomFilter {
+    mem: Vec<[u64; BLOCK_SIZE]>,
+    num_hashes: u64,
+    seeds: [[u8; 16]; 2],
+    hashers: [SipHasher13; 2],
+}
+
+impl BloomFilter {
     /// Returns the number of hashes per element in the bloom filter.
     /// The returned value is always a multiple of two due to internal
     /// optimizations.
@@ -128,9 +217,9 @@ impl BloomFilter {
     ///
     /// # Examples
     /// ```
-    /// use bloom_filter::BloomFilter;
+    /// use bloom_filter::{BloomFilter, Builder};
     ///
-    /// let mut bloom = BloomFilter::from_vec(4, &[1]);
+    /// let mut bloom: BloomFilter = Builder::new(4).items([1].iter());
     /// bloom.insert(&2);
     /// assert!(bloom.contains(&1));
     /// assert!(bloom.contains(&2));
@@ -148,34 +237,15 @@ impl BloomFilter {
         }
     }
 
-    /// Adds all the values to the bloom filter.
-    ///
-    /// # Examples
-    /// ```
-    /// use bloom_filter::BloomFilter;
-    ///
-    /// let mut bloom = BloomFilter::from_vec(4, &[1]);
-    /// bloom.insert_all(&[2, 3]);
-    /// assert!(bloom.contains(&1));
-    /// assert!(bloom.contains(&2));
-    /// assert!(bloom.contains(&3));
-    /// ```
-    #[inline]
-    pub fn insert_all(&mut self, vals: &[impl Hash]) {
-        for val in vals {
-            self.insert(&val);
-        }
-    }
-
     /// Returns `false` if the bloom filter definitely does not contain a value.
     /// Returns `true` if the bloom filter may contain a value, with a degree of certainty.
     ///
     /// # Examples
     ///
     /// ```
-    /// use bloom_filter::BloomFilter;
+    /// use bloom_filter::{BloomFilter, Builder};
     ///
-    /// let bloom = BloomFilter::from_vec(4, &[1, 2, 3]);
+    /// let bloom: BloomFilter = Builder::new(4).items([1, 2, 3].iter());
     /// assert!(bloom.contains(&1));
     /// ```
     #[inline]
@@ -207,6 +277,25 @@ impl BloomFilter {
     }
 }
 
+impl<T> Extend<T> for BloomFilter
+where
+    T: Hash,
+{
+    #[inline]
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for val in iter {
+            self.insert(&val);
+        }
+    }
+}
+
+impl PartialEq for BloomFilter {
+    fn eq(&self, other: &Self) -> bool {
+        self.mem == other.mem && self.seeds == other.seeds && self.num_hashes == other.num_hashes
+    }
+}
+impl Eq for BloomFilter {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,25 +311,12 @@ mod tests {
             for bloom_size_mag in 6..10 {
                 let bloom_size_bytes = 1 << bloom_size_mag;
                 let sample_vals = random_strings(size, 16, 32, *b"seedseedseedseed");
-                let sample_anti_vals = random_strings(1000000, 16, 32, *b"antiantiantianti");
                 let mut control: HashSet<String> = HashSet::new();
                 let block_size = bloom_size_bytes / 64;
-                let mut filter = BloomFilter::from_vec(block_size, &sample_vals);
+                let filter = Builder::new(block_size).items(sample_vals.iter());
                 for x in &sample_vals {
                     control.insert(x.clone());
                     assert!(filter.contains(x));
-                }
-
-                let mut total = 0;
-                let mut false_positives = 0;
-                let mut false_positives_control = 0;
-                for x in &sample_anti_vals {
-                    if !control.contains(x) {
-                        total += 1;
-                        if filter.contains(x) {
-                            false_positives += 1;
-                        }
-                    }
                 }
             }
         }
@@ -258,7 +334,10 @@ mod tests {
                 let sample_vals = random_strings(size, 16, 32, *b"seedseedseedseed");
                 let sample_anti_vals = random_strings(100000, 16, 32, *b"antiantiantianti");
                 let mut control: HashSet<String> = HashSet::new();
-                let mut filter = BloomFilter::from_vec(block_size, &sample_vals);
+                let seed = [[0u8; 16]; 2];
+                let filter = Builder::new(block_size)
+                    .seed(&seed)
+                    .items(sample_vals.iter());
 
                 for x in &sample_vals {
                     control.insert(x.clone());
@@ -289,7 +368,6 @@ mod tests {
                 prev_fp = fp;
             }
         }
-        assert!(false);
     }
 
     #[test]
@@ -318,11 +396,11 @@ mod tests {
         let mut rng = rand_xorshift::XorShiftRng::from_seed(*b"seedseedseedseed");
 
         let num_blocks = 100;
-        let filter = BloomFilter::from_vec(num_blocks, &vec![1]);
+        let filter = Builder::new(num_blocks).items(vec![1].iter());
         let mut counts = vec![0u64; num_blocks];
 
         let iterations = 10000000;
-        for i in 0..iterations {
+        for _ in 0..iterations {
             let h1 = (&mut rng).gen_range(0..u64::MAX);
             let block_index = filter.to_index(h1);
             counts[block_index] += 1;
