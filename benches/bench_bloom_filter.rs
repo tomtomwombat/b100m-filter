@@ -1,4 +1,4 @@
-use bloom_filter::BloomFilter;
+use b100m_filter::BloomFilter;
 use criterion::{black_box, criterion_group, Criterion};
 use rand::{Rng, SeedableRng};
 use std::collections::HashSet;

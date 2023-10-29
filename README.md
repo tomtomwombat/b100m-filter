@@ -7,11 +7,11 @@ A very fast and accurate Bloom Filter implementation in Rust.
 ```toml
 # Cargo.toml
 [dependencies]
-bloom_filter = "0.1.0"
+b100m_filter = "0.1.0"
 ```
 
 ```rust
-use bloom_filter::BloomFilter;
+use b100m_filter::BloomFilter;
 
 let num_blocks = 4; // each block is 64 bytes, 512 bits
 let values = vec!["42", "qwerty", "bloom"];

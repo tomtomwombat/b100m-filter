@@ -3,7 +3,7 @@
 //!
 //! # Examples
 //! ```
-//! use bloom_filter::BloomFilter;
+//! use b100m_filter::BloomFilter;
 //!
 //! let num_blocks = 4; // each block is 64 bytes, 512 bits
 //! let values = vec!["42", "qwerty", "bloom"];
@@ -100,7 +100,7 @@ impl Builder {
     /// # Examples
     ///
     /// ```
-    /// use bloom_filter::BloomFilter;
+    /// use b100m_filter::BloomFilter;
     ///
     /// let bloom = BloomFilter::builder(4).seed(&[[0u8; 16]; 2]).hashes(4);
     /// ```
@@ -117,7 +117,7 @@ impl Builder {
     /// # Examples
     ///
     /// ```
-    /// use bloom_filter::BloomFilter;
+    /// use b100m_filter::BloomFilter;
     ///
     /// let bloom = BloomFilter::builder(4).hashes(4);
     /// ```
@@ -142,7 +142,7 @@ impl Builder {
     /// # Examples
     ///
     /// ```
-    /// use bloom_filter::BloomFilter;
+    /// use b100m_filter::BloomFilter;
     ///
     /// let bloom = BloomFilter::builder(4).expected_items(500);
     /// ```
@@ -158,7 +158,7 @@ impl Builder {
     /// # Examples
     ///
     /// ```
-    /// use bloom_filter::BloomFilter;
+    /// use b100m_filter::BloomFilter;
     ///
     /// let bloom = BloomFilter::builder(4).items([1, 2, 3].iter());
     /// ```
@@ -182,7 +182,7 @@ impl Builder {
 ///
 /// # Examples
 /// ```
-/// use bloom_filter::BloomFilter;
+/// use b100m_filter::BloomFilter;
 ///
 /// let num_blocks = 4; // each block is 64 bytes, 512 bits
 /// let values = vec!["42", "bloom"];
@@ -209,7 +209,7 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// use bloom_filter::{BloomFilter, Builder};
+    /// use b100m_filter::{BloomFilter, Builder};
     ///
     /// let builder: Builder = BloomFilter::builder(16);
     /// let bloom: BloomFilter = builder.hashes(4);
@@ -250,7 +250,7 @@ impl BloomFilter {
     ///
     /// # Examples
     /// ```
-    /// use bloom_filter::BloomFilter;
+    /// use b100m_filter::BloomFilter;
     ///
     /// let mut bloom = BloomFilter::builder(4).hashes(4);
     /// bloom.insert(&2);
@@ -275,7 +275,7 @@ impl BloomFilter {
     /// # Examples
     ///
     /// ```
-    /// use bloom_filter::BloomFilter;
+    /// use b100m_filter::BloomFilter;
     ///
     /// let bloom = BloomFilter::builder(4).items([1, 2, 3].iter());
     /// assert!(bloom.contains(&1));
