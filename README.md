@@ -11,12 +11,12 @@ bloom_filter = "0.1.0"
 ```
 
 ```rust
-use bloom_filter::{BloomFilter, Builder};
+use bloom_filter::BloomFilter;
 
 let num_blocks = 4; // each block is 64 bytes, 512 bits
 let values = vec!["42", "qwerty", "bloom"];
 
-let filter: BloomFilter = Builder::new(num_blocks).items(values.iter());
+let filter = BloomFilter::builder(num_blocks).items(values.iter());
 assert!(filter.contains("42"));
 assert!(filter.contains("bloom"));
 ```
