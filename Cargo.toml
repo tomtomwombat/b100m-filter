@@ -22,6 +22,7 @@ rand_xorshift = "0.3.0"
 itertools = "0.11.0"
 criterion = { version = "0.4", features = ["html_reports"] }
 
+
 [[bench]]
 name = "bench_main"
 harness = false
