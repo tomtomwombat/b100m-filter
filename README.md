@@ -21,7 +21,7 @@ assert!(filter.contains("42"));
 assert!(filter.contains("bloom"));
 ```
 
-`bloom_filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only two hashes per value. Compared to traditional implementations, this bloom filter is 2.5-6.5 faster for a small number of contained items, and hundreds of times faster for more items. In all cases `bloom_filter` maintains competitive false positive rates.
+`bloom_filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only two hashes per value. Compared to traditional implementations, this bloom filter is 2.5-6.5 faster for a small number of contained items, and hundreds of times faster for more items. In all cases `b100m_filter` maintains competitive false positive rates.
 
 ### Runtime Performance
 
@@ -51,7 +51,7 @@ BloomFilter (1000 items, 2097152 bytes): get non-existing 1000
 +                       change: [-98.997% -98.993% -98.989%] (p = 0.00 < 0.05)
                         Performance has improved.
 ```
-As the memory size and set size increase, bloom filters need to perform more hashes to keep false positive rates low. Bloom filter speed is directly proportional to number of hashes. `bloom-filter`'s optimal number of hashes is bounded and keeps near zero rates even for large sizes:
+As the memory size and set size increase, bloom filters need to perform more hashes to keep false positive rates low. Bloom filter speed is directly proportional to number of hashes. `b100m-filter`'s optimal number of hashes is bounded and keeps near zero rates even for large sizes:
 > ![perf](https://github.com/thomaspendock/bloom-filter/assets/45644087/915a9276-47bd-431c-9e60-5b29f6a64c2f)
 
 
