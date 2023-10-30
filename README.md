@@ -27,38 +27,34 @@ assert!(filter.contains("bloom"));
 
 Runtime comparison to a popular traditonal bloom filter crate:
 ```diff
-Sampled False Postive Rate: 0%
+Sampled False Postive Rate: 0.000000%
 BloomFilter (1000 items, 65536 bytes): get existing 1000
-                        time:   [160.30 µs 161.42 µs 162.83 µs]
-+                       change: [-83.393% -83.315% -83.230%] (p = 0.00 < 0.05)
-                        Performance has improved.
+                        time:   [140.84 µs 141.30 µs 141.85 µs]
++                       change: [-85.090% -85.025% -84.936%] (p = 0.00 < 0.05)
 
-Sampled False Postive Rate: 0%
+Sampled False Postive Rate: 0.000000%
 BloomFilter (1000 items, 2097152 bytes): get existing 1000
-                        time:   [160.35 µs 161.73 µs 163.35 µs]
-+                       change: [-99.649% -99.647% -99.645%] (p = 0.00 < 0.05)
-                        Performance has improved.
+                        time:   [141.30 µs 141.46 µs 141.65 µs]
++                       change: [-99.686% -99.686% -99.686%] (p = 0.00 < 0.05)
 
-Sampled False Postive Rate: 0%
+Sampled False Postive Rate: 0.000000%
 BloomFilter (1000 items, 65536 bytes): get non-existing 1000
-                        time:   [30.359 µs 30.573 µs 30.789 µs]
-+                       change: [-59.666% -59.378% -59.067%] (p = 0.00 < 0.05)
-                        Performance has improved.
+                        time:   [27.722 µs 27.754 µs 27.787 µs]
++                       change: [-62.268% -62.027% -61.757%] (p = 0.00 < 0.05)
 
-Sampled False Postive Rate: 0%
+Sampled False Postive Rate: 0.000000%
 BloomFilter (1000 items, 2097152 bytes): get non-existing 1000
-                        time:   [28.621 µs 28.725 µs 28.831 µs]
-+                       change: [-98.997% -98.993% -98.989%] (p = 0.00 < 0.05)
-                        Performance has improved.
+                        time:   [27.209 µs 27.223 µs 27.241 µs]
++                       change: [-99.002% -99.000% -98.996%] (p = 0.00 < 0.05)
+
 ```
 As the memory size and set size increase, bloom filters need to perform more hashes to keep false positive rates low. Bloom filter speed is directly proportional to number of hashes. `b100m-filter`'s optimal number of hashes is bounded and keeps near zero rates even for large sizes:
-> ![bloom_perf](https://github.com/thomaspendock/bloom-filter/assets/45644087/324a2e22-234b-430b-b870-5f0b081ac29a)
-
+> ![bloom_perf](https://github.com/thomaspendock/bloom-filter/assets/45644087/ebe424cf-d8f1-4401-ac10-a4879123565f)
 
 
 ### False Positive Performance
 
-`b100m-filter` does not sacrifice accuracy. Below we compare false positive rate with a traditional (control) bloom filter:
+`b100m-filter` does not sacrifice accuracy. Below is a comparison false positive rate with a traditional bloom filter:
 > ![bloom_fp](https://github.com/thomaspendock/bloom-filter/assets/45644087/03687bcd-412b-434f-9cc4-c844395c0f42)
 
 ## License
