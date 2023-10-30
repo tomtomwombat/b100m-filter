@@ -21,7 +21,7 @@ assert!(filter.contains("42"));
 assert!(filter.contains("bloom"));
 ```
 
-`bloom_filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only two hashes per value. Compared to traditional implementations, this bloom filter is 2.5-6.5 faster for a small number of contained items, and hundreds of times faster for more items. In all cases `b100m_filter` maintains competitive false positive rates.
+`b100m_filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only two hashes per value. Compared to traditional implementations, this bloom filter is 2.5-6.5 faster for a small number of contained items, and hundreds of times faster for more items. In all cases `b100m_filter` maintains competitive false positive rates.
 
 ### Runtime Performance
 
@@ -52,15 +52,14 @@ BloomFilter (1000 items, 2097152 bytes): get non-existing 1000
                         Performance has improved.
 ```
 As the memory size and set size increase, bloom filters need to perform more hashes to keep false positive rates low. Bloom filter speed is directly proportional to number of hashes. `b100m-filter`'s optimal number of hashes is bounded and keeps near zero rates even for large sizes:
-> ![perf](https://github.com/thomaspendock/bloom-filter/assets/45644087/915a9276-47bd-431c-9e60-5b29f6a64c2f)
+> ![bloom_perf](https://github.com/thomaspendock/bloom-filter/assets/45644087/324a2e22-234b-430b-b870-5f0b081ac29a)
 
 
 
 ### False Positive Performance
 
-This Bloom Filter does not sacrifice accuracy. Below we compare false positive rate with a traditional (control) bloom filter:
-> ![Figure_1](https://github.com/thomaspendock/bloom-filter/assets/45644087/45bdd45e-1993-46d7-ad29-d0f13c2e729b)
-
+`b100m_filter` does not sacrifice accuracy. Below we compare false positive rate with a traditional (control) bloom filter:
+> ![bloom_fp](https://github.com/thomaspendock/bloom-filter/assets/45644087/03687bcd-412b-434f-9cc4-c844395c0f42)
 
 ## License
 
