@@ -1,4 +1,4 @@
-# bloom-filter
+# b100m-filter
 A very fast and accurate Bloom Filter implementation in Rust.
 
 
@@ -21,7 +21,7 @@ assert!(filter.contains("42"));
 assert!(filter.contains("bloom"));
 ```
 
-`b100m_filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only two hashes per value. Compared to traditional implementations, this bloom filter is 2.5-6.5 faster for a small number of contained items, and hundreds of times faster for more items. In all cases `b100m_filter` maintains competitive false positive rates.
+`b100m-filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only two hashes per value. Compared to traditional implementations, this bloom filter is 2.5-6.5 faster for a small number of contained items, and hundreds of times faster for more items. In all cases `b100m_filter` maintains competitive false positive rates.
 
 ### Runtime Performance
 
@@ -58,7 +58,7 @@ As the memory size and set size increase, bloom filters need to perform more has
 
 ### False Positive Performance
 
-`b100m_filter` does not sacrifice accuracy. Below we compare false positive rate with a traditional (control) bloom filter:
+`b100m-filter` does not sacrifice accuracy. Below we compare false positive rate with a traditional (control) bloom filter:
 > ![bloom_fp](https://github.com/thomaspendock/bloom-filter/assets/45644087/03687bcd-412b-434f-9cc4-c844395c0f42)
 
 ## License
