@@ -7,7 +7,8 @@ description = "Bloom Filter for Rust"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/thomaspendock/bloom-filter"
 repository = "https://github.com/thomaspendock/bloom-filter"
-keywords = ["bloom", "filter", "data-structures"]
+keywords = ["bloom", "filter", "data-structures", "bloom-filter", "bloomfilter"]
+categories = ["data-structures", "caching", "algorithms"]
 readme = "README.md"
 
 [dependencies]
