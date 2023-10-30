@@ -7,7 +7,7 @@ A very fast and accurate Bloom Filter implementation in Rust.
 ```toml
 # Cargo.toml
 [dependencies]
-b100m_filter = "0.1.0"
+b100m_filter = "0.1.2"
 ```
 
 ```rust
