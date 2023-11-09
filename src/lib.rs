@@ -18,11 +18,13 @@ use siphasher::sip::SipHasher13;
 use std::{
     hash::{Hash, Hasher},
     iter::ExactSizeIterator,
+    ops::Range,
 };
 
 #[cfg(test)]
 pub(crate) mod test_util;
 
+/// Grab the lower 32 bits of a u64
 const U32_MASK_LOWER: u64 = 0b0000000000000000000000000000000011111111111111111111111111111111;
 
 /// u64 have 64 bits, and therefore are used to store 64 elements in the bloom filter.
@@ -30,56 +32,20 @@ const U32_MASK_LOWER: u64 = 0b00000000000000000000000000000000111111111111111111
 /// 2^6 - 1 = 63 = the max bit index of a u64.
 const LOG2_U64_BITS: u32 = u32::ilog2(u64::BITS);
 
-/// Number of u64's (8 bytes per u64) per block, matching a typical L1 cache line size.
-const BLOCK_SIZE: usize = 8;
-
-/// Used to shift u64 index
-const LOG2_BLOCK_SIZE: u32 = u32::ilog2(BLOCK_SIZE as u32);
-
 /// Gets 6 last bits from the hash
 const BIT_MASK: u64 = (1 << LOG2_U64_BITS) - 1;
-/// Gets 3 last bits from the shifted hash
-const U64_MASK: u64 = (1 << LOG2_BLOCK_SIZE) - 1;
-
-/// Number of coordinates (i.e. bits in our bloom filter) that can be derived by one hash.
-/// One hash is u64 bits, and we only need 9 bits (LOG2_U64_BITS + LOG2_BLOCK_SIZE) from
-/// the hash for a bit index. For more runtime performance we can cheaply copy an index
-/// from the hash, instead of computing the next hash.
-///
-/// From experiments, powers of 2 coordinates from the hash provides the best performance
-/// for `contains` for existing and non-existing values.
-const NUM_COORDS_PER_HASH: u32 = 2u32.pow(u32::ilog2(64 / (LOG2_U64_BITS + LOG2_BLOCK_SIZE)));
-
-#[inline]
-fn optimal_hashes(num_bits: usize, num_items: usize) -> u64 {
-    let m = num_bits as f64;
-    let n = std::cmp::max(num_items, 1) as f64;
-    let num_hashes = m / n * f64::ln(2.0f64);
-    floor_round(num_hashes)
-}
-
-#[inline]
-fn floor_round(x: f64) -> u64 {
-    let floored = x.floor() as u64;
-    let thresh = NUM_COORDS_PER_HASH as u64;
-    if floored < thresh {
-        thresh
-    } else {
-        floored - (floored % thresh)
-    }
-}
 
 /// A bloom filter builder
 ///
 /// This type can be used to construct an instance of `BloomFilter`
 /// through a builder-like pattern.
 #[derive(Debug, Clone)]
-pub struct Builder {
+pub struct Builder<const BLOCK_SIZE_BITS: usize = 512> {
     num_blocks: usize,
     seed: [u8; 16],
 }
 
-impl Builder {
+impl<const BLOCK_SIZE_BITS: usize> Builder<BLOCK_SIZE_BITS> {
     /// Sets the seed for this builder. The later constructed `BloomFilter`
     /// will use this seed when hashing items.
     ///
@@ -97,8 +63,7 @@ impl Builder {
 
     /// "Consumes" this builder, using the provided `num_hashes` to return an
     /// empty `BloomFilter`. For performance, the actual number of
-    /// hashes performed internally will be rounded to down to the nearest
-    /// multiple of 4.
+    /// hashes performed internally will be rounded to down to a power of 2.
     ///
     /// # Examples
     ///
@@ -109,7 +74,7 @@ impl Builder {
     /// ```
     pub fn hashes(self, num_hashes: u64) -> BloomFilter {
         BloomFilter {
-            mem: vec![[0u64; BLOCK_SIZE]; self.num_blocks],
+            mem: vec![0u64; BLOCK_SIZE_BITS / 64 * self.num_blocks],
             num_hashes,
             seed: self.seed,
             hasher: SipHasher13::new_with_key(&self.seed),
@@ -129,7 +94,8 @@ impl Builder {
     /// let bloom = BloomFilter::builder(4).expected_items(500);
     /// ```
     pub fn expected_items(self, expected_num_items: usize) -> BloomFilter {
-        let num_hashes = optimal_hashes(BLOCK_SIZE * 64, expected_num_items / self.num_blocks);
+        let num_hashes =
+            BloomFilter::<BLOCK_SIZE_BITS>::optimal_hashes(expected_num_items / self.num_blocks);
         self.hashes(num_hashes)
     }
 
@@ -166,7 +132,7 @@ impl Builder {
 /// ```
 /// use b100m_filter::BloomFilter;
 ///
-/// let num_blocks = 4; // each block is 64 bytes, 512 bits
+/// let num_blocks = 4; // the default for each block is 64 bytes, 512 bits
 /// let values = vec!["42", "bloom"];
 ///
 /// let mut filter = BloomFilter::builder(num_blocks).items(values.iter());
@@ -176,30 +142,144 @@ impl Builder {
 /// assert!(filter.contains("qwerty"));
 /// ```
 #[derive(Debug, Clone)]
-pub struct BloomFilter {
-    mem: Vec<[u64; BLOCK_SIZE]>,
+pub struct BloomFilter<const BLOCK_SIZE_BITS: usize = 512> {
+    mem: Vec<u64>,
     num_hashes: u64,
     seed: [u8; 16],
     hasher: SipHasher13,
 }
 
 impl BloomFilter {
+    fn random_seed() -> [u8; 16] {
+        let mut seed = [0u8; 16];
+        getrandom(&mut seed).unwrap();
+        seed
+    }
+
     /// Creates a new instance of `Builder` to construct a `BloomFilter`
     /// with `num_blocks` number of blocks for tracking item membership.
-    /// Each block is 512 bits of memory.
+    /// **Each block is 512 bits of memory.**
     ///
     /// # Examples
     ///
     /// ```
-    /// use b100m_filter::{BloomFilter, Builder};
+    /// use b100m_filter::BloomFilter;
     ///
-    /// let builder: Builder = BloomFilter::builder(16);
-    /// let bloom: BloomFilter = builder.hashes(4);
+    /// let bloom = BloomFilter::builder(16).hashes(4);
     /// ```
     pub fn builder(num_blocks: usize) -> Builder {
-        let mut seed = [0u8; 16];
-        getrandom(&mut seed).unwrap();
-        Builder { num_blocks, seed }
+        Self::builder512(num_blocks)
+    }
+
+    /// Creates a new instance of `Builder` to construct a `BloomFilter`
+    /// with `num_blocks` number of blocks for tracking item membership.
+    /// **Each block is 512 bits of memory.**
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use b100m_filter::BloomFilter;
+    ///
+    /// let bloom = BloomFilter::builder512(16).hashes(4);
+    /// ```
+    pub fn builder512(num_blocks: usize) -> Builder<512> {
+        Builder::<512> {
+            num_blocks,
+            seed: Self::random_seed(),
+        }
+    }
+
+    /// Creates a new instance of `Builder` to construct a `BloomFilter`
+    /// with `num_blocks` number of blocks for tracking item membership.
+    /// **Each block is 256 bits of memory.**
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use b100m_filter::BloomFilter;
+    ///
+    /// let bloom = BloomFilter::builder256(16).hashes(4);
+    /// ```
+    pub fn builder256(num_blocks: usize) -> Builder<256> {
+        Builder::<256> {
+            num_blocks,
+            seed: Self::random_seed(),
+        }
+    }
+
+    /// Creates a new instance of `Builder` to construct a `BloomFilter`
+    /// with `num_blocks` number of blocks for tracking item membership.
+    /// **Each block is 128 bits of memory.**
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use b100m_filter::BloomFilter;
+    ///
+    /// let bloom = BloomFilter::builder128(16).hashes(4);
+    /// ```
+    pub fn builder128(num_blocks: usize) -> Builder<128> {
+        Builder::<128> {
+            num_blocks,
+            seed: Self::random_seed(),
+        }
+    }
+
+    /// Creates a new instance of `Builder` to construct a `BloomFilter`
+    /// with `num_blocks` number of blocks for tracking item membership.
+    /// **Each block is 64 bits of memory.**
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use b100m_filter::BloomFilter;
+    ///
+    /// let bloom = BloomFilter::builder64(16).hashes(4);
+    /// ```
+    pub fn builder64(num_blocks: usize) -> Builder<64> {
+        Builder::<64> {
+            num_blocks,
+            seed: Self::random_seed(),
+        }
+    }
+}
+
+impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
+    const BLOCK_SIZE: usize = BLOCK_SIZE_BITS / 64;
+
+    /// Used to shift u64 index
+    const LOG2_BLOCK_SIZE: u32 = u32::ilog2(Self::BLOCK_SIZE as u32);
+
+    /// Gets 3 last bits from the shifted hash
+    const U64_MASK: u64 = (1 << Self::LOG2_BLOCK_SIZE) - 1;
+
+    /// Number of coordinates (i.e. bits in our bloom filter) that can be derived by one hash.
+    /// One hash is u64 bits, and we only need 9 bits (LOG2_U64_BITS + LOG2_BLOCK_SIZE) from
+    /// the hash for a bit index. For more runtime performance we can cheaply copy an index
+    /// from the hash, instead of computing the next hash.
+    ///
+    /// From experiments, powers of 2 coordinates from the hash provides the best performance
+    /// for `contains` for existing and non-existing values.
+    const NUM_COORDS_PER_HASH: u32 =
+        2u32.pow(u32::ilog2(64 / (LOG2_U64_BITS + Self::LOG2_BLOCK_SIZE)));
+
+    #[inline]
+    fn floor_round(x: f64) -> u64 {
+        let floored = x.floor() as u64;
+        let thresh = Self::NUM_COORDS_PER_HASH as u64;
+        if floored < thresh {
+            thresh
+        } else {
+            floored - (floored % thresh)
+        }
+    }
+
+    #[inline]
+    fn optimal_hashes(num_items: usize) -> u64 {
+        let m = (u64::BITS as usize * Self::BLOCK_SIZE) as f64;
+        let n = std::cmp::max(num_items, 1) as f64;
+        let num_hashes = m / n * f64::ln(2.0f64);
+        Self::floor_round(num_hashes)
     }
 
     /// Returns the number of bits derived per item for the bloom filter.
@@ -219,8 +299,8 @@ impl BloomFilter {
     /// The bit index is the last 6 bits.
     #[inline]
     const fn coordinate(hash: u64, seed: u32) -> (usize, u64) {
-        let offset = seed * (LOG2_U64_BITS + LOG2_BLOCK_SIZE);
-        let index = hash.wrapping_shr(LOG2_U64_BITS + offset) & U64_MASK;
+        let offset = seed * (LOG2_U64_BITS + Self::LOG2_BLOCK_SIZE);
+        let index = hash.wrapping_shr(LOG2_U64_BITS + offset) & Self::U64_MASK;
         let bit = 1u64 << (hash.wrapping_shr(offset) & BIT_MASK);
         (index as usize, bit)
     }
@@ -237,7 +317,14 @@ impl BloomFilter {
     /// A more performant alternative to `hash % self.mem.len()`
     #[inline]
     fn to_index(&self, hash: u64) -> usize {
-        (((hash & U32_MASK_LOWER) as usize * self.mem.len()) >> 32) as usize
+        ((((hash & U32_MASK_LOWER) as usize * self.mem.len()) >> 32) as usize)
+            >> Self::LOG2_BLOCK_SIZE
+    }
+
+    #[inline]
+    fn block_range(&self, hash: u64) -> Range<usize> {
+        let block_index = self.to_index(hash) * Self::BLOCK_SIZE;
+        block_index..(block_index + Self::BLOCK_SIZE)
     }
 
     /// Adds a value to the bloom filter.
@@ -253,12 +340,13 @@ impl BloomFilter {
     #[inline]
     pub fn insert(&mut self, val: &(impl Hash + ?Sized)) {
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
-        let block_index = self.to_index(h1);
-        for i in (0..self.num_hashes).step_by(NUM_COORDS_PER_HASH as usize) {
+        let block_index = self.block_range(h1);
+        let block = &mut self.mem[block_index];
+        for i in (0..self.num_hashes).step_by(Self::NUM_COORDS_PER_HASH as usize) {
             let h = Self::seeded_hash_from_hashes(&mut h1, &mut h2, i);
-            for j in 0..NUM_COORDS_PER_HASH {
+            for j in 0..Self::NUM_COORDS_PER_HASH {
                 let (index, bit) = Self::coordinate(h, j);
-                self.mem[block_index][index] |= bit;
+                block[index] |= bit;
             }
         }
     }
@@ -277,16 +365,16 @@ impl BloomFilter {
     #[inline]
     pub fn contains(&self, val: &(impl Hash + ?Sized)) -> bool {
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
-        let block_index = self.to_index(h1);
-        let cached_block = self.mem[block_index];
+        let block_index = self.block_range(h1);
+        let block = &self.mem[block_index];
         (0..self.num_hashes)
-            .step_by(NUM_COORDS_PER_HASH as usize)
+            .step_by(Self::NUM_COORDS_PER_HASH as usize)
             .into_iter()
             .all(|i| {
                 let h = Self::seeded_hash_from_hashes(&mut h1, &mut h2, i);
-                (0..NUM_COORDS_PER_HASH).all(|j| {
+                (0..Self::NUM_COORDS_PER_HASH).all(|j| {
                     let (index, bit) = Self::coordinate(h, j);
-                    cached_block[index] & bit > 0
+                    block[index] & bit > 0
                 })
             })
     }
@@ -413,15 +501,16 @@ mod tests {
 
     #[test]
     fn test_floor_round() {
-        for i in 0..NUM_COORDS_PER_HASH {
-            assert_eq!(NUM_COORDS_PER_HASH as u64, floor_round(i as f64));
+        let hashes = BloomFilter::<512>::NUM_COORDS_PER_HASH;
+        for i in 0..hashes {
+            assert_eq!(hashes as u64, BloomFilter::<512>::floor_round(i as f64));
         }
-        for i in (NUM_COORDS_PER_HASH as u64..100).step_by(NUM_COORDS_PER_HASH as usize) {
-            for j in 0..(NUM_COORDS_PER_HASH as u64) {
+        for i in (hashes as u64..100).step_by(hashes as usize) {
+            for j in 0..(hashes as u64) {
                 let x = (i + j) as f64;
-                assert_eq!(i, floor_round(x));
-                assert_eq!(i, floor_round(x + 0.9999));
-                assert_eq!(i, floor_round(x + 0.0001));
+                assert_eq!(i, BloomFilter::<512>::floor_round(x));
+                assert_eq!(i, BloomFilter::<512>::floor_round(x + 0.9999));
+                assert_eq!(i, BloomFilter::<512>::floor_round(x + 0.0001));
             }
         }
     }
@@ -448,6 +537,7 @@ mod tests {
         for _ in 0..iterations {
             let h1 = (&mut rng).gen_range(0..u64::MAX);
             let block_index = filter.to_index(h1);
+            println!("{:?}", block_index);
             counts[block_index] += 1;
         }
         let thresh = ((1.025 * (iterations / num_blocks) as f64)
@@ -461,19 +551,19 @@ mod tests {
         let mut h1 = (&mut rng).gen_range(0..u64::MAX);
         let mut h2 = (&mut rng).gen_range(0..u64::MAX);
 
-        let mut counts = vec![vec![0u64; 64]; BLOCK_SIZE];
+        let mut counts = vec![vec![0u64; 64]; BloomFilter::<512>::BLOCK_SIZE];
 
         let iterations = 10000000;
         for i in 0..iterations {
-            let hi = BloomFilter::seeded_hash_from_hashes(&mut h1, &mut h2, i);
-            for i in 1..NUM_COORDS_PER_HASH + 1 {
-                let (index, bit) = BloomFilter::coordinate(hi, i);
+            let hi = BloomFilter::<512>::seeded_hash_from_hashes(&mut h1, &mut h2, i);
+            for i in 1..BloomFilter::<512>::NUM_COORDS_PER_HASH + 1 {
+                let (index, bit) = BloomFilter::<512>::coordinate(hi, i);
                 let bit_index = u64::ilog2(bit) as usize;
                 counts[index][bit_index] += 1;
             }
         }
-        let total_iterations = (iterations * NUM_COORDS_PER_HASH as u64) as u64;
-        let total_coords = (BLOCK_SIZE as u64 * 64) as u64;
+        let total_iterations = (iterations * BloomFilter::<512>::NUM_COORDS_PER_HASH as u64) as u64;
+        let total_coords = (BloomFilter::<512>::BLOCK_SIZE as u64 * 64) as u64;
         let thresh = ((1.025 * (total_iterations / total_coords) as f64)
             - ((total_iterations / total_coords) as f64)) as u64;
         println!("{:?}", counts);

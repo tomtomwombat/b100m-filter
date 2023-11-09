@@ -18,6 +18,7 @@ fn bench_some_get(c: &mut Criterion) {
         let sample_vals = random_strings(num_items, 12, *b"seedseedseedseed");
         let block_size = bloom_size_bytes / 64;
         let bloom = BloomFilter::builder(block_size).items(sample_vals.iter());
+
         let mut control: HashSet<String> = HashSet::new();
         for i in 0..num_items {
             control.insert(sample_vals[i].clone());
@@ -34,6 +35,7 @@ fn bench_some_get(c: &mut Criterion) {
             }
         }
         let fp = (false_positives as f64) / (total as f64);
+        println!("Number of hashes: {:?}", bloom.num_hashes());
         println!("Sampled False Postive Rate: {:.6}%", 100.0 * fp);
         c.bench_function(
             &format!(
@@ -75,6 +77,7 @@ fn bench_none_get(c: &mut Criterion) {
             }
         }
         let fp = (false_positives as f64) / (total as f64);
+        println!("Number of hashes: {:?}", bloom.num_hashes());
         println!("Sampled False Postive Rate: {:.6}%", 100.0 * fp);
         c.bench_function(
             &format!(
