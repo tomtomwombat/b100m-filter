@@ -160,6 +160,9 @@ impl BloomFilter {
     /// with `num_blocks` number of blocks for tracking item membership.
     /// **Each block is 512 bits of memory.**
     ///
+    /// Use `builder256`, `builder128`, or `builder64` for more speed
+    /// but slightly higher false positive rates.
+    ///
     /// # Examples
     ///
     /// ```
@@ -174,6 +177,9 @@ impl BloomFilter {
     /// Creates a new instance of `Builder` to construct a `BloomFilter`
     /// with `num_blocks` number of blocks for tracking item membership.
     /// **Each block is 512 bits of memory.**
+    ///
+    /// Use `builder256`, `builder128`, or `builder64` for more speed
+    /// but slightly higher false positive rates.
     ///
     /// # Examples
     ///
@@ -193,6 +199,8 @@ impl BloomFilter {
     /// with `num_blocks` number of blocks for tracking item membership.
     /// **Each block is 256 bits of memory.**
     ///
+    /// `Builder<256>` is faster but less accurate than `Builder<512>`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -211,6 +219,8 @@ impl BloomFilter {
     /// with `num_blocks` number of blocks for tracking item membership.
     /// **Each block is 128 bits of memory.**
     ///
+    /// `Builder<128>` is faster but less accurate than `Builder<256>`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -228,6 +238,8 @@ impl BloomFilter {
     /// Creates a new instance of `Builder` to construct a `BloomFilter`
     /// with `num_blocks` number of blocks for tracking item membership.
     /// **Each block is 64 bits of memory.**
+    ///
+    /// `Builder<64>` is faster but less accurate than `Builder<128>`.
     ///
     /// # Examples
     ///
