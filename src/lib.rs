@@ -1,11 +1,11 @@
 //! A very fast bloom filter for Rust.
-//! Implemented with L1 cache friendly 512 bit blocks and efficient hashing.
+//! Implemented with L1 cache friendly array blocks and efficient hashing.
 //!
 //! # Examples
 //! ```
 //! use b100m_filter::BloomFilter;
 //!
-//! let num_blocks = 4; // by default, each block is 64 bytes
+//! let num_blocks = 4; // by default, each block is 512 bits
 //! let values = vec!["42", "qwerty", "bloom"];
 //!
 //! let filter = BloomFilter::builder(num_blocks).items(values.iter());
@@ -122,17 +122,17 @@ impl<const BLOCK_SIZE_BITS: usize> Builder<BLOCK_SIZE_BITS> {
 /// are not, i.e. `contains` for all items in the set is guaranteed to return
 /// true, while `contains` for all items not in the set probably return false.
 ///
-/// `BloomFilter` is supported by an underlying bit vector, chunked into 512 bit "blocks", to track item membership.
+/// `BloomFilter` is supported by an underlying bit vector, chunked into 512, 256, 128, or 64 bit "blocks", to track item membership.
 /// To insert, a number of bits, based on the item's hash, are set in the underlying bit vector.
 /// To check membership, a number of bits, based on the item's hash, are checked in the underlying bit vector.
 ///
-/// Once constructed, a bloom filter's underlying memory usage or number of bits per item does not change.
+/// Once constructed, neither the bloom filter's underlying memory usage nor number of bits per item change.
 ///
 /// # Examples
 /// ```
 /// use b100m_filter::BloomFilter;
 ///
-/// let num_blocks = 4; // the default for each block is 64 bytes, 512 bits
+/// let num_blocks = 4; // the default for each block is 512 bits
 /// let values = vec!["42", "bloom"];
 ///
 /// let mut filter = BloomFilter::builder(num_blocks).items(values.iter());
