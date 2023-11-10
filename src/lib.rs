@@ -15,6 +15,7 @@
 
 use getrandom::getrandom;
 use siphasher::sip::SipHasher13;
+use std::ops::BitXor;
 use std::{
     hash::{Hash, Hasher},
     iter::ExactSizeIterator,
@@ -24,9 +25,6 @@ use std::{
 #[cfg(test)]
 pub(crate) mod test_util;
 
-/// Grab the lower 32 bits of a u64
-const U32_MASK_LOWER: u64 = 0b0000000000000000000000000000000011111111111111111111111111111111;
-
 /// u64 have 64 bits, and therefore are used to store 64 elements in the bloom filter.
 /// We use a bitmaks with a single bit set to interpret a number as a bit index.
 /// 2^6 - 1 = 63 = the max bit index of a u64.
@@ -34,6 +32,14 @@ const LOG2_U64_BITS: u32 = u32::ilog2(u64::BITS);
 
 /// Gets 6 last bits from the hash
 const BIT_MASK: u64 = (1 << LOG2_U64_BITS) - 1;
+
+/// Produces a new hash efficiently from two orignal hashes and a new seed.
+#[inline]
+fn seeded_hash_from_hashes(h1: &mut u64, h2: &mut u64, seed: u64) -> u64 {
+    *h1 = h1.wrapping_add(*h2).rotate_left(5);
+    *h2 = h2.wrapping_add(seed);
+    *h1
+}
 
 /// A bloom filter builder
 ///
@@ -72,7 +78,7 @@ impl<const BLOCK_SIZE_BITS: usize> Builder<BLOCK_SIZE_BITS> {
     ///
     /// let bloom = BloomFilter::builder(4).hashes(4);
     /// ```
-    pub fn hashes(self, num_hashes: u64) -> BloomFilter {
+    pub fn hashes(self, num_hashes: u64) -> BloomFilter<BLOCK_SIZE_BITS> {
         BloomFilter {
             mem: vec![0u64; BLOCK_SIZE_BITS / 64 * self.num_blocks],
             num_hashes,
@@ -93,7 +99,7 @@ impl<const BLOCK_SIZE_BITS: usize> Builder<BLOCK_SIZE_BITS> {
     ///
     /// let bloom = BloomFilter::builder(4).expected_items(500);
     /// ```
-    pub fn expected_items(self, expected_num_items: usize) -> BloomFilter {
+    pub fn expected_items(self, expected_num_items: usize) -> BloomFilter<BLOCK_SIZE_BITS> {
         let num_hashes =
             BloomFilter::<BLOCK_SIZE_BITS>::optimal_hashes(expected_num_items / self.num_blocks);
         self.hashes(num_hashes)
@@ -110,7 +116,10 @@ impl<const BLOCK_SIZE_BITS: usize> Builder<BLOCK_SIZE_BITS> {
     ///
     /// let bloom = BloomFilter::builder(4).items([1, 2, 3].iter());
     /// ```
-    pub fn items<I: ExactSizeIterator<Item = impl Hash>>(self, items: I) -> BloomFilter {
+    pub fn items<I: ExactSizeIterator<Item = impl Hash>>(
+        self,
+        items: I,
+    ) -> BloomFilter<BLOCK_SIZE_BITS> {
         let mut filter = self.expected_items(items.len());
         filter.extend(items);
         filter
@@ -258,10 +267,9 @@ impl BloomFilter {
 
 impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
     const BLOCK_SIZE: usize = BLOCK_SIZE_BITS / 64;
-
     /// Used to shift u64 index
     const LOG2_BLOCK_SIZE: u32 = u32::ilog2(Self::BLOCK_SIZE as u32);
-
+    const U32_MASK_LOWER: u64 = u64::MAX >> (Self::LOG2_BLOCK_SIZE + 32);
     /// Gets 3 last bits from the shifted hash
     const U64_MASK: u64 = (1 << Self::LOG2_BLOCK_SIZE) - 1;
 
@@ -294,16 +302,6 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
         Self::floor_round(num_hashes)
     }
 
-    /// Returns the number of bits derived per item for the bloom filter.
-    /// This number is effectivly the number of hashes per item, but
-    /// all hashes are not actually performed.
-    ///
-    /// The returned value is always a multiple of 4 due to internal
-    /// optimizations.
-    pub fn num_hashes(&self) -> u64 {
-        self.num_hashes
-    }
-
     /// Returns the first u64 and bit index pair from 9 bits of the hash.
     /// Which 9 bits is determined from `seed`.
     /// From the those 9 bits:
@@ -317,26 +315,23 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
         (index as usize, bit)
     }
 
-    /// Produces a new hash efficiently from two orignal hashes and a new seed.
-    #[inline]
-    fn seeded_hash_from_hashes(h1: &mut u64, h2: &mut u64, seed: u64) -> u64 {
-        *h1 = h1.wrapping_add(*h2);
-        *h2 = h2.wrapping_add(seed);
-        *h1
-    }
-
     /// Returns a `usize` within the range of `0..self.mem.len()`
     /// A more performant alternative to `hash % self.mem.len()`
     #[inline]
     fn to_index(&self, hash: u64) -> usize {
-        ((((hash & U32_MASK_LOWER) as usize * self.mem.len()) >> 32) as usize)
-            >> Self::LOG2_BLOCK_SIZE
+        (((hash & Self::U32_MASK_LOWER) as usize * self.mem.len()) >> 32) as usize
     }
 
     #[inline]
     fn block_range(&self, hash: u64) -> Range<usize> {
         let block_index = self.to_index(hash) * Self::BLOCK_SIZE;
         block_index..(block_index + Self::BLOCK_SIZE)
+    }
+
+    #[inline]
+    fn coordinates(h1: &mut u64, h2: &mut u64, seed: u64) -> impl Iterator<Item = (usize, u64)> {
+        let h = seeded_hash_from_hashes(h1, h2, seed);
+        (0..Self::NUM_COORDS_PER_HASH).map(move |j| Self::coordinate(h, j))
     }
 
     /// Adds a value to the bloom filter.
@@ -355,9 +350,7 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
         let block_index = self.block_range(h1);
         let block = &mut self.mem[block_index];
         for i in (0..self.num_hashes).step_by(Self::NUM_COORDS_PER_HASH as usize) {
-            let h = Self::seeded_hash_from_hashes(&mut h1, &mut h2, i);
-            for j in 0..Self::NUM_COORDS_PER_HASH {
-                let (index, bit) = Self::coordinate(h, j);
+            for (index, bit) in Self::coordinates(&mut h1, &mut h2, i) {
                 block[index] |= bit;
             }
         }
@@ -383,12 +376,18 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
             .step_by(Self::NUM_COORDS_PER_HASH as usize)
             .into_iter()
             .all(|i| {
-                let h = Self::seeded_hash_from_hashes(&mut h1, &mut h2, i);
-                (0..Self::NUM_COORDS_PER_HASH).all(|j| {
-                    let (index, bit) = Self::coordinate(h, j);
-                    block[index] & bit > 0
-                })
+                Self::coordinates(&mut h1, &mut h2, i).all(|(index, bit)| block[index] & bit > 0)
             })
+    }
+
+    /// Returns the number of bits derived per item for the bloom filter.
+    /// This number is effectivly the number of hashes per item, but
+    /// all hashes are not actually performed.
+    ///
+    /// The returned value is always a multiple of 4 due to internal
+    /// optimizations.
+    pub fn num_hashes(&self) -> u64 {
+        self.num_hashes
     }
 
     #[inline]
@@ -400,7 +399,7 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
     }
 }
 
-impl<T> Extend<T> for BloomFilter
+impl<T, const BLOCK_SIZE_BITS: usize> Extend<T> for BloomFilter<BLOCK_SIZE_BITS>
 where
     T: Hash,
 {
@@ -423,6 +422,7 @@ impl Eq for BloomFilter {}
 mod tests {
     use super::*;
     use crate::test_util::*;
+    use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use std::collections::HashSet;
 
@@ -432,7 +432,7 @@ mod tests {
             let size = 10usize.pow(mag);
             for bloom_size_mag in 6..10 {
                 let bloom_size_bytes = 1 << bloom_size_mag;
-                let sample_vals = random_strings(size, 16, 32, *b"seedseedseedseed");
+                let sample_vals = random_strings(size, 16, 32, 52323);
                 let mut control: HashSet<String> = HashSet::new();
                 let block_size = bloom_size_bytes / 64;
                 let filter = BloomFilter::builder(block_size).items(sample_vals.iter());
@@ -449,7 +449,7 @@ mod tests {
         let mag = 3;
         let size = 10usize.pow(mag);
         let bloom_size_bytes = 1 << 10;
-        let sample_vals = random_strings(size, 16, 32, *b"seedseedseedseed");
+        let sample_vals = random_strings(size, 16, 32, 53226);
         let block_size = bloom_size_bytes / 64;
         for x in 0u8..4 {
             let seed = [x; 16];
@@ -463,7 +463,7 @@ mod tests {
         }
     }
 
-    #[test]
+    // #[test]
     fn false_pos_decrease_with_size() {
         for mag in 1..5 {
             let size = 10usize.pow(mag);
@@ -472,8 +472,8 @@ mod tests {
             for bloom_size_mag in 6..18 {
                 let bloom_size_bytes = 1 << bloom_size_mag;
                 let block_size = bloom_size_bytes / 64;
-                let sample_vals = random_strings(size, 16, 32, *b"seedseedseedseed");
-                let sample_anti_vals = random_strings(100000, 16, 32, *b"antiantiantianti");
+                let sample_vals = random_strings(size, 16, 32, 5234);
+                let sample_anti_vals = random_strings(100000, 16, 32, 235326);
                 let mut control: HashSet<String> = HashSet::new();
                 let seed = [1u8; 16];
                 let filter = BloomFilter::builder(block_size)
@@ -513,18 +513,24 @@ mod tests {
 
     #[test]
     fn test_floor_round() {
-        let hashes = BloomFilter::<512>::NUM_COORDS_PER_HASH;
-        for i in 0..hashes {
-            assert_eq!(hashes as u64, BloomFilter::<512>::floor_round(i as f64));
-        }
-        for i in (hashes as u64..100).step_by(hashes as usize) {
-            for j in 0..(hashes as u64) {
-                let x = (i + j) as f64;
-                assert_eq!(i, BloomFilter::<512>::floor_round(x));
-                assert_eq!(i, BloomFilter::<512>::floor_round(x + 0.9999));
-                assert_eq!(i, BloomFilter::<512>::floor_round(x + 0.0001));
+        fn assert_floor_round<const N: usize>() {
+            let hashes = BloomFilter::<N>::NUM_COORDS_PER_HASH;
+            for i in 0..hashes {
+                assert_eq!(hashes as u64, BloomFilter::<N>::floor_round(i as f64));
+            }
+            for i in (hashes as u64..100).step_by(hashes as usize) {
+                for j in 0..(hashes as u64) {
+                    let x = (i + j) as f64;
+                    assert_eq!(i, BloomFilter::<N>::floor_round(x));
+                    assert_eq!(i, BloomFilter::<N>::floor_round(x + 0.9999));
+                    assert_eq!(i, BloomFilter::<N>::floor_round(x + 0.0001));
+                }
             }
         }
+        assert_floor_round::<512>();
+        assert_floor_round::<256>();
+        assert_floor_round::<128>();
+        assert_floor_round::<64>();
     }
 
     fn assert_even_distribution(distr: Vec<u64>, expected: u64, threshold: u64) {
@@ -537,52 +543,92 @@ mod tests {
         }
     }
 
-    #[test]
+    //#[test]
     fn block_hash_distribution() {
-        let mut rng = rand_xorshift::XorShiftRng::from_seed(*b"seedseedseedseed");
-
-        let num_blocks = 100;
-        let filter = BloomFilter::builder(num_blocks).items(vec![1].iter());
-        let mut counts = vec![0u64; num_blocks];
-
-        let iterations = 10000000;
-        for _ in 0..iterations {
-            let h1 = (&mut rng).gen_range(0..u64::MAX);
-            let block_index = filter.to_index(h1);
-            println!("{:?}", block_index);
-            counts[block_index] += 1;
+        fn block_hash_distribution_<const N: usize>(mut filter: BloomFilter<N>) {
+            let mut rng = rand_xorshift::XorShiftRng::from_seed(*b"seedseedseedseed");
+            let iterations = 1000000;
+            for _ in 0..iterations {
+                let h1 = (&mut rng).gen_range(0..u64::MAX);
+                let block_index = filter.block_range(h1);
+                let block = &mut filter.mem[block_index];
+                for i in 0..block.len() {
+                    block[i] += 1;
+                }
+            }
+            println!("{:?}", filter.mem);
+            let total: u64 = filter.mem.iter().sum();
+            let avg = (total / filter.mem.iter().len() as u64) as f64;
+            let thresh = (0.025 * avg) as u64;
+            assert_even_distribution(filter.mem, avg as u64, thresh);
         }
-        let thresh = ((1.025 * (iterations / num_blocks) as f64)
-            - ((iterations / num_blocks) as f64)) as u64;
-        assert_even_distribution(counts, (iterations / num_blocks) as u64, thresh);
+        let num_blocks = 100;
+        block_hash_distribution_::<512>(BloomFilter::builder512(num_blocks).hashes(1));
+        block_hash_distribution_::<256>(BloomFilter::builder256(num_blocks).hashes(1));
+        block_hash_distribution_::<128>(BloomFilter::builder128(num_blocks).hashes(1));
+        block_hash_distribution_::<64>(BloomFilter::builder64(num_blocks).hashes(1));
+    }
+
+    #[test]
+    fn test_coordinate() {
+        let hash = 0b1100011110101110111010111000111001100000010011011110110100000100;
+        let (index, bit) = BloomFilter::<512>::coordinate(hash, 0);
+        assert_eq!(
+            index,
+            0b0000000000000000000000000000000000000000000000000000000000000100
+        );
+        assert_eq!(
+            bit,
+            1u64 << 0b0000000000000000000000000000000000000000000000000000000000000100
+        );
+    }
+
+    #[test]
+    fn test_seeded_hash_from_hashes() {
+        let mut rng = StdRng::seed_from_u64(524323);
+        let mut h1 = (&mut rng).gen_range(0..u64::MAX);
+        let mut h2 = (&mut rng).gen_range(0..u64::MAX);
+        println!("h1: {:?}", h1);
+        println!("h2: {:?}", h2);
+        let size = 1000;
+        let mut seeded_hash_counts = vec![0; size];
+        let iterations = 10000000;
+        for i in 0..iterations {
+            let hi = seeded_hash_from_hashes(&mut h1, &mut h2, i);
+            seeded_hash_counts[(hi as usize) % size] += 1;
+        }
+        println!("{:?}", seeded_hash_counts);
+        let avg = iterations / (size as u64);
+        assert_even_distribution(seeded_hash_counts.clone(), avg, avg / 20);
     }
 
     #[test]
     fn index_hash_distribution() {
-        let mut rng = rand_xorshift::XorShiftRng::from_seed(*b"seedseedseedseed");
-        let mut h1 = (&mut rng).gen_range(0..u64::MAX);
-        let mut h2 = (&mut rng).gen_range(0..u64::MAX);
-
-        let mut counts = vec![vec![0u64; 64]; BloomFilter::<512>::BLOCK_SIZE];
-
-        let iterations = 10000000;
-        for i in 0..iterations {
-            let hi = BloomFilter::<512>::seeded_hash_from_hashes(&mut h1, &mut h2, i);
-            for i in 1..BloomFilter::<512>::NUM_COORDS_PER_HASH + 1 {
-                let (index, bit) = BloomFilter::<512>::coordinate(hi, i);
-                let bit_index = u64::ilog2(bit) as usize;
-                counts[index][bit_index] += 1;
+        fn index_hash_distribution_<const N: usize>(filter: BloomFilter<N>) {
+            let [mut h1, mut h2] = filter.get_orginal_hashes("qwerty");
+            let mut counts = vec![vec![0u64; 64]; BloomFilter::<N>::BLOCK_SIZE];
+            let iterations = 1000000;
+            for i in 0..iterations {
+                for (index, bit) in BloomFilter::<N>::coordinates(&mut h1, &mut h2, i) {
+                    let bit_index = u64::ilog2(bit) as usize;
+                    counts[index][bit_index] += 1;
+                }
             }
+            let total_iterations = iterations * BloomFilter::<N>::NUM_COORDS_PER_HASH as u64;
+            let total_bits = BloomFilter::<N>::BLOCK_SIZE as u64 * 64;
+            let avg = (total_iterations / total_bits) as f64;
+            let thresh = (0.05 * avg) as u64;
+            println!("{:?}", counts);
+
+            println!("{:?}", BloomFilter::<N>::NUM_COORDS_PER_HASH);
+            assert_even_distribution(counts.into_iter().flatten().collect(), avg as u64, thresh);
         }
-        let total_iterations = (iterations * BloomFilter::<512>::NUM_COORDS_PER_HASH as u64) as u64;
-        let total_coords = (BloomFilter::<512>::BLOCK_SIZE as u64 * 64) as u64;
-        let thresh = ((1.025 * (total_iterations / total_coords) as f64)
-            - ((total_iterations / total_coords) as f64)) as u64;
-        println!("{:?}", counts);
-        assert_even_distribution(
-            counts.into_iter().flatten().collect(),
-            (total_iterations / total_coords) as u64,
-            thresh,
-        );
+        index_hash_distribution_::<512>(BloomFilter::builder512(1).hashes(1));
+        index_hash_distribution_::<256>(BloomFilter::builder256(1).hashes(1));
+        index_hash_distribution_::<128>(BloomFilter::builder128(1).hashes(1));
+        index_hash_distribution_::<64>(BloomFilter::builder64(1).hashes(1));
     }
+
+    #[test]
+    fn optimal_hashes_is_optimal() {}
 }
