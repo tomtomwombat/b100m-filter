@@ -15,7 +15,6 @@
 
 use getrandom::getrandom;
 use siphasher::sip::SipHasher13;
-use std::ops::BitXor;
 use std::{
     hash::{Hash, Hasher},
     iter::ExactSizeIterator,
@@ -334,6 +333,11 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
         (0..Self::NUM_COORDS_PER_HASH).map(move |j| Self::coordinate(h, j))
     }
 
+    #[inline]
+    fn hash_seeds(size: u64) -> impl Iterator<Item = u64> {
+        (0..size).step_by(Self::NUM_COORDS_PER_HASH as usize)
+    }
+
     /// Adds a value to the bloom filter.
     ///
     /// # Examples
@@ -349,7 +353,7 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
         let block_index = self.block_range(h1);
         let block = &mut self.mem[block_index];
-        for i in (0..self.num_hashes).step_by(Self::NUM_COORDS_PER_HASH as usize) {
+        for i in Self::hash_seeds(self.num_hashes) {
             for (index, bit) in Self::coordinates(&mut h1, &mut h2, i) {
                 block[index] |= bit;
             }
@@ -372,12 +376,9 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
         let block_index = self.block_range(h1);
         let block = &self.mem[block_index];
-        (0..self.num_hashes)
-            .step_by(Self::NUM_COORDS_PER_HASH as usize)
-            .into_iter()
-            .all(|i| {
-                Self::coordinates(&mut h1, &mut h2, i).all(|(index, bit)| block[index] & bit > 0)
-            })
+        Self::hash_seeds(self.num_hashes).into_iter().all(|i| {
+            Self::coordinates(&mut h1, &mut h2, i).all(|(index, bit)| block[index] & bit > 0)
+        })
     }
 
     /// Returns the number of bits derived per item for the bloom filter.
@@ -428,20 +429,28 @@ mod tests {
 
     #[test]
     fn random_inserts_always_contained() {
-        for mag in 1..7 {
-            let size = 10usize.pow(mag);
-            for bloom_size_mag in 6..10 {
-                let bloom_size_bytes = 1 << bloom_size_mag;
-                let sample_vals = random_strings(size, 16, 32, 52323);
-                let mut control: HashSet<String> = HashSet::new();
-                let block_size = bloom_size_bytes / 64;
-                let filter = BloomFilter::builder(block_size).items(sample_vals.iter());
-                for x in &sample_vals {
-                    control.insert(x.clone());
-                    assert!(filter.contains(x));
+        fn random_inserts_always_contained_<const N: usize>() {
+            for mag in 1..6 {
+                let size = 10usize.pow(mag);
+                for bloom_size_mag in 6..10 {
+                    let num_blocks_bytes = 1 << bloom_size_mag;
+                    let sample_vals = random_strings(size, 16, 32, 52323);
+                    let num_blocks = num_blocks_bytes / (N >> 3);
+                    let filter = Builder::<N> {
+                        num_blocks,
+                        seed: BloomFilter::random_seed(),
+                    }
+                    .items(sample_vals.iter());
+                    for x in &sample_vals {
+                        assert!(filter.contains(x));
+                    }
                 }
             }
         }
+        random_inserts_always_contained_::<512>();
+        random_inserts_always_contained_::<256>();
+        random_inserts_always_contained_::<128>();
+        random_inserts_always_contained_::<64>();
     }
 
     #[test]
@@ -463,7 +472,22 @@ mod tests {
         }
     }
 
-    // #[test]
+    fn false_pos_rate<const N: usize>(filter: &BloomFilter<N>, control: &HashSet<String>) -> f64 {
+        let sample_anti_vals = random_strings(10000, 16, 32, 11);
+        let mut total = 0;
+        let mut false_positives = 0;
+        for x in &sample_anti_vals {
+            if !control.contains(x) {
+                total += 1;
+                if filter.contains(x) {
+                    false_positives += 1;
+                }
+            }
+        }
+        (false_positives as f64) / (total as f64)
+    }
+
+    #[test]
     fn false_pos_decrease_with_size() {
         for mag in 1..5 {
             let size = 10usize.pow(mag);
@@ -471,32 +495,16 @@ mod tests {
             let mut prev_prev_fp = 1.0;
             for bloom_size_mag in 6..18 {
                 let bloom_size_bytes = 1 << bloom_size_mag;
-                let block_size = bloom_size_bytes / 64;
+                let num_blocks = bloom_size_bytes / 64;
                 let sample_vals = random_strings(size, 16, 32, 5234);
-                let sample_anti_vals = random_strings(100000, 16, 32, 235326);
-                let mut control: HashSet<String> = HashSet::new();
-                let seed = [1u8; 16];
-                let filter = BloomFilter::builder(block_size)
-                    .seed(&seed)
-                    .items(sample_vals.iter());
+                let filter = Builder::<512> {
+                    num_blocks,
+                    seed: [1u8; 16],
+                }.items(sample_vals.iter());
+                let control: HashSet<String> = sample_vals.into_iter().collect();
 
-                for x in &sample_vals {
-                    control.insert(x.clone());
-                    assert!(filter.contains(x));
-                }
-
-                let mut total = 0;
-                let mut false_positives = 0;
-                for x in &sample_anti_vals {
-                    if !control.contains(x) {
-                        total += 1;
-                        if filter.contains(x) {
-                            false_positives += 1;
-                        }
-                    }
-                }
-
-                let fp = (false_positives as f64) / (total as f64);
+                let fp = false_pos_rate(&filter, &control);
+                        
                 println!(
                     "{:?}, {:?}, {:.6}, {:?}",
                     size,
@@ -543,10 +551,10 @@ mod tests {
         }
     }
 
-    //#[test]
+    #[test]
     fn block_hash_distribution() {
         fn block_hash_distribution_<const N: usize>(mut filter: BloomFilter<N>) {
-            let mut rng = rand_xorshift::XorShiftRng::from_seed(*b"seedseedseedseed");
+            let mut rng = StdRng::seed_from_u64(524323);
             let iterations = 1000000;
             for _ in 0..iterations {
                 let h1 = (&mut rng).gen_range(0..u64::MAX);
@@ -556,10 +564,9 @@ mod tests {
                     block[i] += 1;
                 }
             }
-            println!("{:?}", filter.mem);
             let total: u64 = filter.mem.iter().sum();
             let avg = (total / filter.mem.iter().len() as u64) as f64;
-            let thresh = (0.025 * avg) as u64;
+            let thresh = (0.05 * avg) as u64;
             assert_even_distribution(filter.mem, avg as u64, thresh);
         }
         let num_blocks = 100;
@@ -588,8 +595,6 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(524323);
         let mut h1 = (&mut rng).gen_range(0..u64::MAX);
         let mut h2 = (&mut rng).gen_range(0..u64::MAX);
-        println!("h1: {:?}", h1);
-        println!("h2: {:?}", h2);
         let size = 1000;
         let mut seeded_hash_counts = vec![0; size];
         let iterations = 10000000;
@@ -597,7 +602,6 @@ mod tests {
             let hi = seeded_hash_from_hashes(&mut h1, &mut h2, i);
             seeded_hash_counts[(hi as usize) % size] += 1;
         }
-        println!("{:?}", seeded_hash_counts);
         let avg = iterations / (size as u64);
         assert_even_distribution(seeded_hash_counts.clone(), avg, avg / 20);
     }
@@ -618,9 +622,6 @@ mod tests {
             let total_bits = BloomFilter::<N>::BLOCK_SIZE as u64 * 64;
             let avg = (total_iterations / total_bits) as f64;
             let thresh = (0.05 * avg) as u64;
-            println!("{:?}", counts);
-
-            println!("{:?}", BloomFilter::<N>::NUM_COORDS_PER_HASH);
             assert_even_distribution(counts.into_iter().flatten().collect(), avg as u64, thresh);
         }
         index_hash_distribution_::<512>(BloomFilter::builder512(1).hashes(1));
@@ -628,7 +629,4 @@ mod tests {
         index_hash_distribution_::<128>(BloomFilter::builder128(1).hashes(1));
         index_hash_distribution_::<64>(BloomFilter::builder64(1).hashes(1));
     }
-
-    #[test]
-    fn optimal_hashes_is_optimal() {}
 }

@@ -1,6 +1,5 @@
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::iter::repeat;
 
 #[allow(dead_code)]
 pub(crate) fn random_strings(
