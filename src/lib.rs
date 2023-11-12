@@ -383,12 +383,10 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
         })
     }
 
-    /// Returns the number of bits derived per item for the bloom filter.
-    /// This number is effectivly the number of hashes per item, but
-    /// all hashes are not actually performed.
+    /// Returns the effective number of hashes per item. In other words,
+    /// the number of bits derived per item.
     ///
-    /// The returned value is always a multiple of 4 due to internal
-    /// optimizations.
+    /// For performance reasons, the number of bits is rounded to down to a power of 2, depending on `BLOCK_SIZE_BITS`.
     pub fn num_hashes(&self) -> u64 {
         self.num_hashes
     }
