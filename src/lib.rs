@@ -1,5 +1,5 @@
 //! A very fast bloom filter for Rust.
-//! Implemented with L1 cache friendly array blocks and efficient hashing.
+//! Implemented with L1 cache friendly blocks and efficient hashing.
 //!
 //! # Examples
 //! ```
@@ -24,8 +24,8 @@ use std::{
 #[cfg(test)]
 pub(crate) mod test_util;
 
-/// u64 have 64 bits, and therefore are used to store 64 elements in the bloom filter.
-/// We use a bitmaks with a single bit set to interpret a number as a bit index.
+/// u64s have 64 bits, and therefore are used to store 64 elements in the bloom filter.
+/// We use a bitmask with a single bit set to interpret a number as a bit index.
 /// 2^6 - 1 = 63 = the max bit index of a u64.
 const LOG2_U64_BITS: u32 = u32::ilog2(u64::BITS);
 
@@ -40,10 +40,10 @@ fn seeded_hash_from_hashes(h1: &mut u64, h2: &mut u64, seed: u64) -> u64 {
     *h1
 }
 
-/// A bloom filter builder
+/// A bloom filter builder.
 ///
 /// This type can be used to construct an instance of `BloomFilter`
-/// through a builder-like pattern.
+/// via the builder pattern.
 #[derive(Debug, Clone)]
 pub struct Builder<const BLOCK_SIZE_BITS: usize = 512> {
     num_blocks: usize,
@@ -68,7 +68,8 @@ impl<const BLOCK_SIZE_BITS: usize> Builder<BLOCK_SIZE_BITS> {
 
     /// "Consumes" this builder, using the provided `num_hashes` to return an
     /// empty `BloomFilter`. For performance, the actual number of
-    /// hashes performed internally will be rounded to down to a power of 2.
+    /// hashes performed internally will be rounded to down to a power of 2,
+    /// depending on `BLOCK_SIZE_BITS`.
     ///
     /// # Examples
     ///
@@ -265,9 +266,11 @@ impl BloomFilter {
 }
 
 impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
+    /// Block size in u64s
     const BLOCK_SIZE: usize = BLOCK_SIZE_BITS / 64;
     /// Used to shift u64 index
     const LOG2_BLOCK_SIZE: u32 = u32::ilog2(Self::BLOCK_SIZE as u32);
+    /// Used to calculate block index
     const U32_MASK_LOWER: u64 = u64::MAX >> (Self::LOG2_BLOCK_SIZE + 32);
     /// Gets 3 last bits from the shifted hash
     const U64_MASK: u64 = (1 << Self::LOG2_BLOCK_SIZE) - 1;
@@ -391,6 +394,10 @@ impl<const BLOCK_SIZE_BITS: usize> BloomFilter<BLOCK_SIZE_BITS> {
         self.num_hashes
     }
 
+    /// The first two hashes of the value to be inserted or checked.
+    ///
+    /// Subsequent hashes are efficiently derived from these two using `seeded_hash_from_hashes`,
+    /// generating many "random" values for the single value.
     #[inline]
     fn get_orginal_hashes(&self, val: &(impl Hash + ?Sized)) -> [u64; 2] {
         let hasher = &mut self.hasher.clone();
@@ -500,11 +507,12 @@ mod tests {
                 let filter = Builder::<512> {
                     num_blocks,
                     seed: [1u8; 16],
-                }.items(sample_vals.iter());
+                }
+                .items(sample_vals.iter());
                 let control: HashSet<String> = sample_vals.into_iter().collect();
 
                 let fp = false_pos_rate(&filter, &control);
-                        
+
                 println!(
                     "{:?}, {:?}, {:.6}, {:?}",
                     size,

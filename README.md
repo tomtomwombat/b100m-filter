@@ -13,7 +13,7 @@ b100m-filter = "0.2.0"
 ```rust
 use b100m_filter::BloomFilter;
 
-let num_blocks = 4; // each block is 64 bytes, 512 bits
+let num_blocks = 4; // by default, each block is 512 bits
 let values = vec!["42", "qwerty", "bloom"];
 
 let filter = BloomFilter::builder(num_blocks).items(values.iter());
