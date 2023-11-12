@@ -2,7 +2,7 @@
 name = "b100m-filter"
 version = "0.2.0"
 edition = "2021"
-authors = ["Thomas Pendock"]
+authors = ["tomtomwombat"]
 description = "Bloom Filter for Rust"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/tomtomwombat/bloom-filter/"
