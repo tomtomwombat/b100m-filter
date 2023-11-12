@@ -29,6 +29,8 @@ assert!(filter.contains("42"));
 assert!(filter.contains("bloom"));
 ```
 
+### Implementation
+
 `b100m-filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only one hash per value. Compared to traditional implementations, this bloom filter is 5-13 times faster for a small number of contained items, and hundreds of times faster for more items. In all cases, `b100m-filter` maintains competitive false positive rates.
 
 ### Runtime Performance
