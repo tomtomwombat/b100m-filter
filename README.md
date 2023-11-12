@@ -1,5 +1,5 @@
 # b100m-filter
-[![Crates.io](https://img.shields.io/crates/v/b100m-filter.svg)](https://crates.io/crates/b100-filter)
+[![Crates.io](https://img.shields.io/crates/v/b100m-filter.svg)](https://crates.io/crates/b100m-filter)
 [![docs.rs](https://docs.rs/bloomfilter/badge.svg)](https://docs.rs/b100m-filter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/tomtomwombat/bloom-filter/blob/main/LICENSE-MIT)
 [![License: APACHE](https://img.shields.io/badge/License-Apache-blue.svg)](https://github.com/tomtomwombat/bloom-filter/blob/main/LICENSE-Apache)
@@ -31,7 +31,7 @@ assert!(filter.contains("bloom"));
 
 ### Implementation
 
-`b100m-filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only one hash per value. Compared to traditional implementations, this bloom filter is 5-13 times faster for a small number of contained items, and hundreds of times faster for more items. In all cases, `b100m-filter` maintains competitive false positive rates.
+`b100m-filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only one hash per value. Compared to traditional implementations, `b100m-filter` is 5-13 times faster for a small number of contained items, and hundreds of times faster for more items. In all cases, `b100m-filter` maintains competitive false positive rates.
 
 ### Runtime Performance
 

@@ -575,10 +575,11 @@ mod tests {
             assert_even_distribution(filter.mem, avg as u64, thresh);
         }
         let num_blocks = 100;
-        block_hash_distribution_::<512>(BloomFilter::builder512(num_blocks).hashes(1));
-        block_hash_distribution_::<256>(BloomFilter::builder256(num_blocks).hashes(1));
-        block_hash_distribution_::<128>(BloomFilter::builder128(num_blocks).hashes(1));
-        block_hash_distribution_::<64>(BloomFilter::builder64(num_blocks).hashes(1));
+        let seed = [0; 16];
+        block_hash_distribution_::<512>(BloomFilter::builder512(num_blocks).seed(&seed).hashes(1));
+        block_hash_distribution_::<256>(BloomFilter::builder256(num_blocks).seed(&seed).hashes(1));
+        block_hash_distribution_::<128>(BloomFilter::builder128(num_blocks).seed(&seed).hashes(1));
+        block_hash_distribution_::<64>(BloomFilter::builder64(num_blocks).seed(&seed).hashes(1));
     }
 
     #[test]
