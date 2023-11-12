@@ -3,7 +3,6 @@
 [![docs.rs](https://docs.rs/bloomfilter/badge.svg)](https://docs.rs/b100m-filter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/tomtomwombat/bloom-filter/blob/main/LICENSE-MIT)
 [![License: APACHE](https://img.shields.io/badge/License-Apache-blue.svg)](https://github.com/tomtomwombat/bloom-filter/blob/main/LICENSE-Apache)
-![Build](https://img.shields.io/github/actions/workflow/status/tomtomwombat/bloom-filter/rust.yml?branch=master)
 <a href="https://codecov.io/gh/tomtomwombat/bloom-filter">
     <img src="https://codecov.io/gh/tomtomwombat/bloom-filter/branch/main/graph/badge.svg">
 </a>
