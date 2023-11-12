@@ -629,9 +629,28 @@ mod tests {
             let thresh = (thresh_pct * avg) as u64;
             assert_even_distribution(counts.into_iter().flatten().collect(), avg as u64, thresh);
         }
-        index_hash_distribution_::<512>(BloomFilter::builder512(1).hashes(1), 0.15);
-        index_hash_distribution_::<256>(BloomFilter::builder256(1).hashes(1), 0.05);
-        index_hash_distribution_::<128>(BloomFilter::builder128(1).hashes(1), 0.05);
-        index_hash_distribution_::<64>(BloomFilter::builder64(1).hashes(1), 0.05);
+        let seed = [0; 16];
+        index_hash_distribution_::<512>(BloomFilter::builder512(1).seed(&seed).hashes(1), 0.1);
+        index_hash_distribution_::<256>(BloomFilter::builder256(1).seed(&seed).hashes(1), 0.05);
+        index_hash_distribution_::<128>(BloomFilter::builder128(1).seed(&seed).hashes(1), 0.05);
+        index_hash_distribution_::<64>(BloomFilter::builder64(1).seed(&seed).hashes(1), 0.05);
+    }
+
+    #[test]
+    fn test_debug() {
+        let filter: BloomFilter<64> = BloomFilter {
+            mem: vec![],
+            num_hashes: 1,
+            seed: [0; 16],
+            hasher: SipHasher13::default(),
+        };
+
+        assert!(!format!("{:?}", filter).is_empty());
+    }
+
+    #[test]
+    fn test_clone() {
+        let filter = BloomFilter::builder(4).hashes(4);
+        assert_eq!(filter, filter.clone());
     }
 }
