@@ -1,3 +1,4 @@
+use crate::BlockedBitVector;
 use crate::BloomFilter;
 use crate::BuildHasher;
 use crate::DefaultHasher;
@@ -7,7 +8,7 @@ use std::hash::Hash;
 ///
 /// This type can be used to construct an instance of `BloomFilter`
 /// via the builder pattern.
-#[derive(Debug, Clone)] // TODO: what if S doesn't impl Debug or Clone?
+#[derive(Debug, Clone)]
 pub struct Builder<const BLOCK_SIZE_BITS: usize = 512, S = DefaultHasher> {
     pub(crate) num_blocks: usize,
     pub(crate) hasher: S,
@@ -45,7 +46,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> Builder<BLOCK_SIZE_BITS, S> {
     /// ```
     pub fn hashes(self, num_hashes: u64) -> BloomFilter<BLOCK_SIZE_BITS, S> {
         BloomFilter {
-            mem: vec![0u64; BLOCK_SIZE_BITS / 64 * self.num_blocks],
+            bits: BlockedBitVector::<BLOCK_SIZE_BITS>::new(self.num_blocks),
             num_hashes,
             hasher: self.hasher,
         }

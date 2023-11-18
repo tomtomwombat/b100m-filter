@@ -5,8 +5,8 @@ edition = "2021"
 authors = ["tomtomwombat"]
 description = "A very fast bloom filter that can use any hasher."
 license = "MIT OR Apache-2.0"
-homepage = "https://github.com/tomtomwombat/bloom-filter/"
-repository = "https://github.com/tomtomwombat/bloom-filter/"
+homepage = "https://github.com/tomtomwombat/b100m-filter/"
+repository = "https://github.com/tomtomwombat/b100m-filter/"
 keywords = ["bloom", "filter", "data-structures", "bloom-filter", "bloomfilter"]
 categories = ["data-structures", "caching", "algorithms"]
 readme = "README.md"
@@ -15,12 +15,11 @@ readme = "README.md"
 maintenance = { status = "actively-developed"}
 
 [dependencies]
-getrandom = { version = "0.2.10", optional = true}
+rand = "0.8.5"
 siphasher = "0.3.10"
 
 [dev-dependencies]
 rand_regex = "0.16.0"
-rand = "0.8.5"
 itertools = "0.11.0"
 criterion = { version = "0.4", features = ["html_reports"] }
 fxhash = "0.2.1"
@@ -31,7 +30,3 @@ fastbloom-rs = "0.5.7"
 [[bench]]
 name = "bench_main"
 harness = false
-
-[features]
-default = ["random"]
-random = ["getrandom"]

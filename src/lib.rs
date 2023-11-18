@@ -18,13 +18,12 @@ use std::{
     ops::Range,
 };
 
-#[cfg(test)]
-pub(crate) mod test_util;
-
 mod hasher;
-use hasher::DefaultHasher;
+pub use hasher::{CloneBuildHasher, DefaultHasher};
 mod builder;
 pub use builder::Builder;
+mod bit_vector;
+pub use bit_vector::BlockedBitVector;
 
 /// u64s have 64 bits, and therefore are used to store 64 elements in the bloom filter.
 /// We use a bitmask with a single bit set to interpret a number as a bit index.
@@ -68,7 +67,7 @@ fn seeded_hash_from_hashes(h1: &mut u64, h2: &mut u64, seed: u64) -> u64 {
 /// ```
 #[derive(Debug, Clone)]
 pub struct BloomFilter<const BLOCK_SIZE_BITS: usize = 512, S = DefaultHasher> {
-    mem: Vec<u64>,
+    bits: BlockedBitVector<BLOCK_SIZE_BITS>,
     num_hashes: u64,
     hasher: S,
 }
@@ -287,8 +286,8 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     const LOG2_BLOCK_SIZE: u32 = u32::ilog2(Self::BLOCK_SIZE as u32);
     /// Used to calculate block index
     const U32_MASK_LOWER: u64 = u64::MAX >> (Self::LOG2_BLOCK_SIZE + 32);
-    /// Gets 3 last bits from the shifted hash
-    const U64_MASK: u64 = (1 << Self::LOG2_BLOCK_SIZE) - 1;
+
+    const LOG2_BLOCK_SIZE_BITS: u32 = u32::ilog2(BLOCK_SIZE_BITS as u32);
 
     /// Number of coordinates (i.e. bits in our bloom filter) that can be derived by one hash.
     /// One hash is u64 bits, and we only need 9 bits (LOG2_U64_BITS + LOG2_BLOCK_SIZE) from
@@ -297,8 +296,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     ///
     /// From experiments, powers of 2 coordinates from the hash provides the best performance
     /// for `contains` for existing and non-existing values.
-    const NUM_COORDS_PER_HASH: u32 =
-        2u32.pow(u32::ilog2(64 / (LOG2_U64_BITS + Self::LOG2_BLOCK_SIZE)));
+    const NUM_COORDS_PER_HASH: u32 = 2u32.pow(u32::ilog2(64 / Self::LOG2_BLOCK_SIZE_BITS));
 
     #[inline]
     fn floor_round(x: f64) -> u64 {
@@ -319,35 +317,18 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
         Self::floor_round(num_hashes)
     }
 
-    /// Returns the ith bit coordinate (u64 and bit index pair) from the hash.
-    /// The `usize` is used to get the corresponding u64 from `self.mem`,
-    /// the u64 is a mask used to get the corresponding bit from that u64.
-    #[inline]
-    const fn coordinate(hash: u64, i: u32) -> (usize, u64) {
-        let offset = i * (LOG2_U64_BITS + Self::LOG2_BLOCK_SIZE);
-        let index = hash.wrapping_shr(LOG2_U64_BITS + offset) & Self::U64_MASK;
-        let bit = 1u64 << (hash.wrapping_shr(offset) & BIT_MASK);
-        (index as usize, bit)
-    }
-
     /// Returns a `usize` within the range of `0..self.mem.len()`
     /// A more performant alternative to `hash % self.mem.len()`
     #[inline]
-    fn to_index(&self, hash: u64) -> usize {
-        (((hash & Self::U32_MASK_LOWER) as usize * self.mem.len()) >> 32) as usize
-    }
-
-    #[inline]
-    fn block_range(&self, hash: u64) -> Range<usize> {
-        let block_index = self.to_index(hash) * Self::BLOCK_SIZE;
-        block_index..(block_index + Self::BLOCK_SIZE)
+    fn block_index(&self, hash: u64) -> usize {
+        (((hash & Self::U32_MASK_LOWER) as usize * self.bits.len()) >> 32) as usize
     }
 
     /// Return a sequence of bit coordinates derived from a hash.
     #[inline]
-    fn coordinates(h1: &mut u64, h2: &mut u64, seed: u64) -> impl Iterator<Item = (usize, u64)> {
+    fn bit_indexes(h1: &mut u64, h2: &mut u64, seed: u64) -> impl Iterator<Item = u64> {
         let h = seeded_hash_from_hashes(h1, h2, seed);
-        (0..Self::NUM_COORDS_PER_HASH).map(move |j| Self::coordinate(h, j))
+        (0..Self::NUM_COORDS_PER_HASH).map(move |j| h.wrapping_shr(j * Self::LOG2_BLOCK_SIZE_BITS))
     }
 
     #[inline]
@@ -368,11 +349,10 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     #[inline]
     pub fn insert(&mut self, val: &(impl Hash + ?Sized)) {
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
-        let block_index = self.block_range(h1);
-        let block = &mut self.mem[block_index];
+        let block_index = self.block_index(h1);
         for i in Self::hash_seeds(self.num_hashes) {
-            for (index, bit) in Self::coordinates(&mut h1, &mut h2, i) {
-                block[index] |= bit;
+            for bit_index in Self::bit_indexes(&mut h1, &mut h2, i) {
+                self.bits.set(block_index, bit_index);
             }
         }
     }
@@ -391,10 +371,10 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     #[inline]
     pub fn contains(&self, val: &(impl Hash + ?Sized)) -> bool {
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
-        let block_index = self.block_range(h1);
-        let block = &self.mem[block_index];
+        let block = &self.bits.get_block(self.block_index(h1));
         Self::hash_seeds(self.num_hashes).into_iter().all(|i| {
-            Self::coordinates(&mut h1, &mut h2, i).all(|(index, bit)| block[index] & bit > 0)
+            self.bits
+                .check_all_for_block(block, Self::bit_indexes(&mut h1, &mut h2, i))
         })
     }
 
@@ -412,9 +392,6 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     /// generating many "random" values for the single value.
     #[inline]
     fn get_orginal_hashes(&self, val: &(impl Hash + ?Sized)) -> [u64; 2] {
-        // let hasher = &mut self.hasher.clone();
-        // val.hash(hasher);
-        // let hash = hash64(val); // hasher.finish();
         let mut state = self.hasher.build_hasher();
         val.hash(&mut state);
         let hash = state.finish();
@@ -436,7 +413,7 @@ where
 
 impl PartialEq for BloomFilter {
     fn eq(&self, other: &Self) -> bool {
-        self.mem == other.mem && self.num_hashes == other.num_hashes
+        self.bits == other.bits && self.num_hashes == other.num_hashes
     }
 }
 impl Eq for BloomFilter {}
@@ -444,10 +421,18 @@ impl Eq for BloomFilter {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::*;
-    use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{rngs::StdRng, Rng, SeedableRng};
     use std::collections::HashSet;
+
+    fn random_strings(num: usize, min_repeat: u32, max_repeat: u32, seed: u64) -> Vec<String> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let gen = rand_regex::Regex::compile(r"[a-zA-Z]+", max_repeat).unwrap();
+        (&mut rng)
+            .sample_iter(&gen)
+            .filter(|s: &String| s.len() >= min_repeat as usize)
+            .take(num)
+            .collect()
+    }
 
     #[test]
     fn random_inserts_always_contained() {
@@ -559,12 +544,15 @@ mod tests {
         assert_floor_round::<64>();
     }
 
-    fn assert_even_distribution(distr: Vec<u64>, expected: u64, threshold: u64) {
+    fn assert_even_distribution(distr: &[u64], err: f64) {
+        assert!(err > 0.0 && err < 1.0);
+        let expected: i64 = (distr.iter().sum::<u64>() / (distr.len() as u64)) as i64;
+        let thresh = (expected as f64 * err) as i64;
         for x in distr {
-            let diff = ((x as i64) - (expected as i64)).abs();
+            let diff = (*x as i64 - expected).abs();
             assert!(
-                diff <= threshold as i64,
-                "{x:?} deviates from {expected:?} (threshold: {threshold:?})"
+                diff <= thresh,
+                "{x:?} deviates from {expected:?} (err: {err:?})"
             );
         }
     }
@@ -572,20 +560,14 @@ mod tests {
     #[test]
     fn block_hash_distribution() {
         fn block_hash_distribution_<const N: usize>(mut filter: BloomFilter<N>) {
-            let mut rng = StdRng::seed_from_u64(524323);
+            let mut rng = StdRng::seed_from_u64(1);
             let iterations = 1000000;
+            let mut buckets = vec![0; filter.bits.num_blocks()];
             for _ in 0..iterations {
                 let h1 = (&mut rng).gen_range(0..u64::MAX);
-                let block_index = filter.block_range(h1);
-                let block = &mut filter.mem[block_index];
-                for i in 0..block.len() {
-                    block[i] += 1;
-                }
+                buckets[filter.block_index(h1)] += 1;
             }
-            let total: u64 = filter.mem.iter().sum();
-            let avg = (total / filter.mem.iter().len() as u64) as f64;
-            let thresh = (0.05 * avg) as u64;
-            assert_even_distribution(filter.mem, avg as u64, thresh);
+            assert_even_distribution(&buckets, 0.05);
         }
         let num_blocks = 100;
         let seed = [0; 16];
@@ -593,20 +575,6 @@ mod tests {
         block_hash_distribution_::<256>(BloomFilter::builder256(num_blocks).seed(&seed).hashes(1));
         block_hash_distribution_::<128>(BloomFilter::builder128(num_blocks).seed(&seed).hashes(1));
         block_hash_distribution_::<64>(BloomFilter::builder64(num_blocks).seed(&seed).hashes(1));
-    }
-
-    #[test]
-    fn test_coordinate() {
-        let hash = 0b1100011110101110111010111000111001100000010011011110110100000100;
-        let (index, bit) = BloomFilter::<512>::coordinate(hash, 0);
-        assert_eq!(
-            index,
-            0b0000000000000000000000000000000000000000000000000000000000000100
-        );
-        assert_eq!(
-            bit,
-            1u64 << 0b0000000000000000000000000000000000000000000000000000000000000100
-        );
     }
 
     #[test]
@@ -621,27 +589,22 @@ mod tests {
             let hi = seeded_hash_from_hashes(&mut h1, &mut h2, i);
             seeded_hash_counts[(hi as usize) % size] += 1;
         }
-        let avg = iterations / (size as u64);
-        assert_even_distribution(seeded_hash_counts.clone(), avg, avg / 20);
+        assert_even_distribution(&seeded_hash_counts, 0.05);
     }
 
     #[test]
     fn index_hash_distribution() {
         fn index_hash_distribution_<const N: usize>(filter: BloomFilter<N>, thresh_pct: f64) {
             let [mut h1, mut h2] = filter.get_orginal_hashes("qwerty");
-            let mut counts = vec![vec![0u64; 64]; BloomFilter::<N>::BLOCK_SIZE];
+            let mut counts = vec![0; N];
             let iterations = 100000;
             for i in 0..iterations {
-                for (index, bit) in BloomFilter::<N>::coordinates(&mut h1, &mut h2, i) {
-                    let bit_index = u64::ilog2(bit) as usize;
-                    counts[index][bit_index] += 1;
+                for bit_index in BloomFilter::<N>::bit_indexes(&mut h1, &mut h2, i) {
+                    let index = bit_index as usize % N;
+                    counts[index] += 1;
                 }
             }
-            let total_iterations = iterations * BloomFilter::<N>::NUM_COORDS_PER_HASH as u64;
-            let total_bits = BloomFilter::<N>::BLOCK_SIZE as u64 * 64;
-            let avg = (total_iterations / total_bits) as f64;
-            let thresh = (thresh_pct * avg) as u64;
-            assert_even_distribution(counts.into_iter().flatten().collect(), avg as u64, thresh);
+            assert_even_distribution(&counts, thresh_pct);
         }
         let seed = [0; 16];
         index_hash_distribution_::<512>(BloomFilter::builder512(1).seed(&seed).hashes(1), 0.2);

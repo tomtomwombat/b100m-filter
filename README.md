@@ -15,7 +15,7 @@ A very fast and accurate Bloom Filter implementation in Rust.
 ```toml
 # Cargo.toml
 [dependencies]
-b100m-filter = "0.2.0"
+b100m-filter = "0.3.0"
 ```
 
 ```rust
@@ -31,7 +31,7 @@ assert!(filter.contains("bloom"));
 
 ### Implementation
 
-`b100m-filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only one hash per value. Compared to traditional implementations, `b100m-filter` is 5-13 times faster for a small number of contained items, and hundreds of times faster for more items. In all cases, `b100m-filter` maintains competitive false positive rates.
+`b100m-filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only one hash per value. Compared to traditional implementations, `b100m-filter` is 5-13 times faster for small sets of items, and hundreds of times faster for larger item sets. In all cases, `b100m-filter` maintains competitive false positive rates.
 
 ### Runtime Performance
 
