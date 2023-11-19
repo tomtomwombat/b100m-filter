@@ -22,11 +22,11 @@ b100m-filter = "0.3.0"
 use b100m_filter::BloomFilter;
 
 let num_blocks = 4; // by default, each block is 512 bits
-let values = vec!["42", "qwerty", "bloom"];
+let values = vec!["42", "🦀"];
 
 let filter = BloomFilter::builder(num_blocks).items(values.iter());
 assert!(filter.contains("42"));
-assert!(filter.contains("bloom"));
+assert!(filter.contains("🦀"));
 ```
 
 ### Implementation
