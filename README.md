@@ -52,7 +52,7 @@ Runtime comparison to other bloom filter crates:
 
 ### False Positive Performance
 
-`b100m-filter` does not sacrifice accuracy. Below is a comparison false positive rate with other bloom filter crates:
+`b100m-filter` does not compromise accuracy. Below is a comparison false positive rate with other bloom filter crates:
 > ![bloom-crate-fp](https://github.com/tomtomwombat/b100m-filter/assets/45644087/1043c30b-3de8-44ec-b868-88625c7aad09)
 
 
