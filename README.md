@@ -36,8 +36,9 @@ assert!(filter.contains("bloom"));
 ### Runtime Performance
 
 Runtime comparison to other bloom filter crates:
-- Bloom memory size = 16kb
-- 1000 contained items (364 hashes)
+- Bloom memory size = 16Kb
+- 1000 contained items
+- 364 hashes per item
   
 |  | Check Non-Existing (ns) | Check Existing (ns) |
 | --- | --- | --- |
@@ -47,16 +48,22 @@ Runtime comparison to other bloom filter crates:
 | bloomfilter | 68.912 | 996.56 |
 | probabilistic-collections | 83.385 | 974.67 |
 
-*fastbloom-rs uses XXHash.
-
-As the memory size and set size increase, traditional bloom filters need to perform more hashes to keep false positive rates low. Bloom filter speed is directly proportional to number of hashes. However, `b100m-filter`'s optimal number of hashes is bounded while keeping near zero rates even for many items:
-> ![bloom_perf](https://github.com/thomaspendock/bloom-filter/assets/45644087/ebe424cf-d8f1-4401-ac10-a4879123565f)
-
+*fastbloom-rs uses XXHash, which is faster than SipHash.
 
 ### False Positive Performance
 
-`b100m-filter` does not sacrifice accuracy. Below is a comparison false positive rate with a traditional bloom filter:
-> ![bloom_fp](https://github.com/thomaspendock/bloom-filter/assets/45644087/03687bcd-412b-434f-9cc4-c844395c0f42)
+`b100m-filter` does not sacrifice accuracy. Below is a comparison false positive rate with other bloom filter crates:
+> ![bloom-crate-fp](https://github.com/tomtomwombat/b100m-filter/assets/45644087/1043c30b-3de8-44ec-b868-88625c7aad09)
+
+
+
+### Memory and False Positive Rate
+
+As the number of bits and set size increase, traditional bloom filters need to perform more hashes per item to keep false positive rates low. However, `b100m-filter`'s optimal number of hashes is bounded while keeping near zero rates even for many items:
+> ![bloom_perf](https://github.com/thomaspendock/bloom-filter/assets/45644087/ebe424cf-d8f1-4401-ac10-a4879123565f)
+>
+> (Bloom filter speed is directly proportional to number of hashes)
+
 
 ## License
 
