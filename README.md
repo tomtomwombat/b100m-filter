@@ -7,7 +7,7 @@
     <img src="https://codecov.io/gh/tomtomwombat/b100m-filter/branch/main/graph/badge.svg">
 </a>
 
-A very fast and accurate Bloom Filter implementation in Rust.
+The fastest bloom filter in Rust. No accuracy compromises. Use any hasher.
 
 
 ### Usage
