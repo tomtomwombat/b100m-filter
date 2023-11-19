@@ -2,6 +2,7 @@
 //! Implemented with L1 cache friendly blocks and efficient hashing.
 //!
 //! # Examples
+//! Basic usage:
 //! ```
 //! use b100m_filter::BloomFilter;
 //!
@@ -11,6 +12,16 @@
 //! let filter = BloomFilter::builder(num_blocks).items(values.iter());
 //! assert!(filter.contains("42"));
 //! assert!(filter.contains("bloom"));
+//! ```
+//! Configure any hasher:
+//! ```
+//! use b100m_filter::BloomFilter;
+//! use ahash::RandomState;
+//!
+//! let num_blocks = 4; // by default, each block is 512 bits
+//! let values = vec!["42", "qwerty", "bloom"];
+//!
+//! let filter = BloomFilter::builder(num_blocks).hasher(RandomState::default()).items(values.iter());
 //! ```
 
 use std::{
