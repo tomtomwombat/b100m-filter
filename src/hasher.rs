@@ -8,6 +8,7 @@ pub struct CloneBuildHasher<H: Hasher + Clone> {
 }
 
 impl<H: Hasher + Clone> CloneBuildHasher<H> {
+    #[allow(dead_code)]
     fn new(hasher: H) -> Self {
         Self { hasher }
     }

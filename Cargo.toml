@@ -3,7 +3,7 @@ name = "b100m-filter"
 version = "0.3.0"
 edition = "2021"
 authors = ["tomtomwombat"]
-description = "A very fast bloom filter that can use any hasher."
+description = "The fastest bloom filter in Rust. No accuracy compromises. Use any hasher."
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/tomtomwombat/b100m-filter/"
 repository = "https://github.com/tomtomwombat/b100m-filter/"
@@ -22,11 +22,7 @@ siphasher = "0.3.10"
 rand_regex = "0.16.0"
 itertools = "0.11.0"
 criterion = { version = "0.4", features = ["html_reports"] }
-fxhash = "0.2.1"
 ahash = "0.8.6"
-
-# For benches
-fastbloom-rs = "0.5.7"
 
 [[bench]]
 name = "bench_main"

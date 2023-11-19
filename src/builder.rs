@@ -111,14 +111,13 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> Builder<BLOCK_SIZE_BITS, S> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::BloomFilter;
-    use fxhash::FxBuildHasher;
+    use ahash::RandomState;
 
     #[test]
     fn api() {
-        let bloom = BloomFilter::builder128(10)
-            .hasher(FxBuildHasher::default())
+        let _bloom = BloomFilter::builder128(10)
+            .hasher(RandomState::default())
             .hashes(4);
     }
 }

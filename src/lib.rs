@@ -7,36 +7,33 @@
 //! use b100m_filter::BloomFilter;
 //!
 //! let num_blocks = 4; // by default, each block is 512 bits
-//! let values = vec!["42", "qwerty", "bloom"];
+//! let values = vec!["42", "🦀"];
 //!
 //! let filter = BloomFilter::builder(num_blocks).items(values.iter());
 //! assert!(filter.contains("42"));
-//! assert!(filter.contains("bloom"));
+//! assert!(filter.contains("🦀"));
 //! ```
-//! Configure any hasher:
+//! Use any hasher:
 //! ```
 //! use b100m_filter::BloomFilter;
 //! use ahash::RandomState;
 //!
 //! let num_blocks = 4; // by default, each block is 512 bits
-//! let values = vec!["42", "qwerty", "bloom"];
+//! let values = vec!["42", "🦀"];
 //!
 //! let filter = BloomFilter::builder(num_blocks).hasher(RandomState::default()).items(values.iter());
 //! ```
 
-use std::{
-    hash::{BuildHasher, Hash, Hasher},
-    ops::Range,
-};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 mod hasher;
-use hasher::{CloneBuildHasher, DefaultHasher};
+use hasher::DefaultHasher;
 mod builder;
 pub use builder::Builder;
 mod bit_vector;
 use bit_vector::BlockedBitVector;
 
-/// Produces a new hash efficiently from two orignal hashes and a new seed.
+/// Produces a new hash efficiently from two orignal hashes and a seed.
 #[inline]
 fn seeded_hash_from_hashes(h1: &mut u64, h2: &mut u64, seed: u64) -> u64 {
     *h1 = h1.wrapping_add(*h2).rotate_left(5);
@@ -249,11 +246,12 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     #[inline]
     pub fn insert(&mut self, val: &(impl Hash + ?Sized)) {
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
-        let block_index = self.block_index(h1);
+        let block = &mut self.bits.get_block_mut(self.block_index(h1));
         for i in Self::hash_seeds(self.num_hashes) {
-            for bit_index in Self::bit_indexes(&mut h1, &mut h2, i) {
-                self.bits.set(block_index, bit_index);
-            }
+            BlockedBitVector::<BLOCK_SIZE_BITS>::set_all_for_block(
+                block,
+                Self::bit_indexes(&mut h1, &mut h2, i),
+            );
         }
     }
 
@@ -284,6 +282,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     /// the number of bits derived per item.
     ///
     /// For performance reasons, the number of bits is rounded to down to a power of 2, depending on `BLOCK_SIZE_BITS`.
+    #[inline]
     pub fn num_hashes(&self) -> u64 {
         self.num_hashes
     }
@@ -452,16 +451,13 @@ mod tests {
         let thresh = (expected as f64 * err) as i64;
         for x in distr {
             let diff = (*x as i64 - expected).abs();
-            assert!(
-                diff <= thresh,
-                "{x:?} deviates from {expected:?} (err: {err:?})"
-            );
+            assert!(diff <= thresh, "{x:?} deviates from {expected:?}");
         }
     }
 
     #[test]
     fn block_hash_distribution() {
-        fn block_hash_distribution_<const N: usize>(mut filter: BloomFilter<N>) {
+        fn block_hash_distribution_<const N: usize>(filter: BloomFilter<N>) {
             let mut rng = StdRng::seed_from_u64(1);
             let iterations = 1000000;
             let mut buckets = vec![0; filter.bits.num_blocks()];
