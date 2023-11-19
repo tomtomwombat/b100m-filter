@@ -32,6 +32,24 @@ impl<const BLOCK_SIZE_BITS: usize> Builder<BLOCK_SIZE_BITS> {
 }
 
 impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> Builder<BLOCK_SIZE_BITS, S> {
+    /// Sets the hasher for this builder. The later constructed `BloomFilter` will use
+    /// this hasher when inserting and checking items.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use b100m_filter::BloomFilter;
+    /// use ahash::RandomState;
+    ///
+    /// let bloom = BloomFilter::builder(4).hasher(RandomState::default()).hashes(4);
+    /// ```
+    pub fn hasher<H: BuildHasher>(self, hasher: H) -> Builder<BLOCK_SIZE_BITS, H> {
+        Builder::<BLOCK_SIZE_BITS, H> {
+            num_blocks: self.num_blocks,
+            hasher,
+        }
+    }
+
     /// "Consumes" this builder, using the provided `num_hashes` to return an
     /// empty `BloomFilter`. For performance, the actual number of
     /// hashes performed internally will be rounded to down to a power of 2,
@@ -88,5 +106,19 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> Builder<BLOCK_SIZE_BITS, S> {
         let mut filter = self.expected_items(items.len());
         filter.extend(items);
         filter
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::BloomFilter;
+    use fxhash::FxBuildHasher;
+
+    #[test]
+    fn api() {
+        let bloom = BloomFilter::builder128(10)
+            .hasher(FxBuildHasher::default())
+            .hashes(4);
     }
 }

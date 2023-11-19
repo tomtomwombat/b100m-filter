@@ -53,17 +53,12 @@ impl<const BLOCK_SIZE_BITS: usize> BlockedBitVector<BLOCK_SIZE_BITS> {
         &self.bits[Self::block_range(index)]
     }
 
-    #[inline]
-    pub fn get_block_mut(&mut self, index: usize) -> &mut [u64] {
-        &mut self.bits[Self::block_range(index)]
-    }
-
     /// Returns the ith bit coordinate (u64 and bit index pair) from the hash.
     /// The `usize` is used to get the corresponding u64 from `self.mem`,
     /// the u64 is a mask used to get the corresponding bit from that u64.
     #[inline]
     pub(crate) const fn coordinate(bit_index: u64) -> (usize, u64) {
-        let index = bit_index.wrapping_shr(LOG2_U64_BITS) & Self::U64_MASK;
+        let index = bit_index.wrapping_shr(LOG2_U64_BITS);
         let bit = 1u64 << (bit_index & BIT_MASK);
         (index as usize, bit)
     }
@@ -91,11 +86,7 @@ impl<const BLOCK_SIZE_BITS: usize> BlockedBitVector<BLOCK_SIZE_BITS> {
     }
 
     #[inline]
-    pub fn check_all_for_block(
-        &self,
-        block: &[u64],
-        mut bit_indexes: impl Iterator<Item = u64>,
-    ) -> bool {
+    pub fn check_all_for_block(block: &[u64], mut bit_indexes: impl Iterator<Item = u64>) -> bool {
         bit_indexes.all(|bit_index| {
             let (index, bit) = Self::coordinate(bit_index);
             block[index] & bit > 0

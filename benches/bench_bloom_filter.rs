@@ -4,27 +4,26 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::HashSet;
 
+use ahash;
 use fxhash::FxBuildHasher;
 use fxhash::FxHasher;
 
 use fastbloom_rs::{self, Membership};
 
-#[allow(dead_code)]
 fn random_strings(num: usize, max_repeat: u32, seed: u64) -> Vec<String> {
     let mut rng = StdRng::seed_from_u64(seed);
     let gen = rand_regex::Regex::compile(r"[a-zA-Z]+", max_repeat).unwrap();
-    (&mut rng)
-        .sample_iter(&gen)
-        .take(num)
-        .collect::<Vec<String>>()
+    (&mut rng).sample_iter(&gen).take(num).collect()
 }
 
 fn bench_get(c: &mut Criterion) {
     for (num_items, bloom_size_bytes) in [(1000, 1 << 16), (1000, 2097152)] {
         let sample_vals = random_strings(num_items, 12, 1234);
         let num_blocks = bloom_size_bytes / 64;
-        // let bloom = BloomFilter::builder512_with_hasher(num_blocks, FxBuildHasher::default()).items(sample_vals.iter());
-        let bloom = BloomFilter::builder512(num_blocks).items(sample_vals.iter());
+
+        let bloom = BloomFilter::builder512(num_blocks)
+            .hasher(FxBuildHasher::default())
+            .items(sample_vals.iter());
 
         let mut fast_bloom = fastbloom_rs::FilterBuilder::from_size_and_hashes(
             bloom_size_bytes as u64 * 8,
@@ -67,8 +66,8 @@ fn bench_get(c: &mut Criterion) {
                 b.iter(|| {
                     for i in 0..1000 {
                         let val = &sample_vals[i];
-                        let _ = black_box(bloom.contains(val));
-                        // let _ = black_box(fast_bloom.contains(val.as_bytes()));
+                        // let _ = black_box(bloom.contains(val));
+                        let _ = black_box(fast_bloom.contains(val.as_bytes()));
                     }
                 })
             },
@@ -83,8 +82,8 @@ fn bench_get(c: &mut Criterion) {
                 b.iter(|| {
                     for i in 0..1000 {
                         let val = &sample_anti_vals[i];
-                        let _ = black_box(bloom.contains(val));
-                        // let _ = black_box(fast_bloom.contains(val.as_bytes()));
+                        // let _ = black_box(bloom.contains(val));
+                        let _ = black_box(fast_bloom.contains(val.as_bytes()));
                     }
                 })
             },

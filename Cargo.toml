@@ -23,6 +23,7 @@ rand_regex = "0.16.0"
 itertools = "0.11.0"
 criterion = { version = "0.4", features = ["html_reports"] }
 fxhash = "0.2.1"
+ahash = "0.8.6"
 
 # For benches
 fastbloom-rs = "0.5.7"

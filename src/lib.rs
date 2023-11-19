@@ -19,19 +19,11 @@ use std::{
 };
 
 mod hasher;
-pub use hasher::{CloneBuildHasher, DefaultHasher};
+use hasher::{CloneBuildHasher, DefaultHasher};
 mod builder;
 pub use builder::Builder;
 mod bit_vector;
-pub use bit_vector::BlockedBitVector;
-
-/// u64s have 64 bits, and therefore are used to store 64 elements in the bloom filter.
-/// We use a bitmask with a single bit set to interpret a number as a bit index.
-/// 2^6 - 1 = 63 = the max bit index of a u64.
-const LOG2_U64_BITS: u32 = u32::ilog2(u64::BITS);
-
-/// Gets 6 last bits from the hash
-const BIT_MASK: u64 = (1 << LOG2_U64_BITS) - 1;
+use bit_vector::BlockedBitVector;
 
 /// Produces a new hash efficiently from two orignal hashes and a new seed.
 #[inline]
@@ -73,20 +65,13 @@ pub struct BloomFilter<const BLOCK_SIZE_BITS: usize = 512, S = DefaultHasher> {
 }
 
 impl BloomFilter {
-    pub(crate) fn new_builder_with_hasher<const BLOCK_SIZE_BITS: usize, S: BuildHasher>(
-        num_blocks: usize,
-        hasher: S,
-    ) -> Builder<BLOCK_SIZE_BITS, S> {
-        Builder::<BLOCK_SIZE_BITS, S> { num_blocks, hasher }
-    }
-
     pub(crate) fn new_builder<const BLOCK_SIZE_BITS: usize>(
         num_blocks: usize,
     ) -> Builder<BLOCK_SIZE_BITS> {
-        Self::new_builder_with_hasher::<BLOCK_SIZE_BITS, DefaultHasher>(
+        Builder::<BLOCK_SIZE_BITS> {
             num_blocks,
-            Default::default(),
-        )
+            hasher: Default::default(),
+        }
     }
 
     /// Creates a new instance of `Builder` to construct a `BloomFilter`
@@ -108,27 +93,6 @@ impl BloomFilter {
     }
 
     /// Creates a new instance of `Builder` to construct a `BloomFilter`
-    /// with `num_blocks` number of blocks for tracking item membership,
-    /// and the specified hasher.
-    ///
-    /// **Each block is 512 bits of memory.**
-    ///
-    /// Use `builder256`, `builder128`, or `builder64` for more speed
-    /// but slightly higher false positive rates.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use b100m_filter::BloomFilter;
-    /// use fxhash::FxBuildHasher;
-    ///
-    /// let bloom = BloomFilter::builder_with_hasher(16, FxBuildHasher::default()).hashes(4);
-    /// ```
-    pub fn builder_with_hasher<S: BuildHasher>(num_blocks: usize, hasher: S) -> Builder<512, S> {
-        Self::builder512_with_hasher(num_blocks, hasher)
-    }
-
-    /// Creates a new instance of `Builder` to construct a `BloomFilter`
     /// with `num_blocks` number of blocks for tracking item membership.
     /// **Each block is 512 bits of memory.**
     ///
@@ -144,27 +108,6 @@ impl BloomFilter {
     /// ```
     pub fn builder512(num_blocks: usize) -> Builder<512> {
         Self::new_builder::<512>(num_blocks)
-    }
-
-    /// Creates a new instance of `Builder` to construct a `BloomFilter`
-    /// with `num_blocks` number of blocks for tracking item membership,
-    /// and the specified hasher.
-    ///
-    /// **Each block is 512 bits of memory.**
-    ///
-    /// Use `builder256`, `builder128`, or `builder64` for more speed
-    /// but slightly higher false positive rates.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use b100m_filter::BloomFilter;
-    /// use fxhash::FxBuildHasher;
-    ///
-    /// let bloom = BloomFilter::builder512_with_hasher(16, FxBuildHasher::default()).hashes(4);
-    /// ```
-    pub fn builder512_with_hasher<S: BuildHasher>(num_blocks: usize, hasher: S) -> Builder<512, S> {
-        Self::new_builder_with_hasher::<512, S>(num_blocks, hasher)
     }
 
     /// Creates a new instance of `Builder` to construct a `BloomFilter`
@@ -185,26 +128,6 @@ impl BloomFilter {
     }
 
     /// Creates a new instance of `Builder` to construct a `BloomFilter`
-    /// with `num_blocks` number of blocks for tracking item membership,
-    /// and the specified hasher.
-    ///
-    /// **Each block is 256 bits of memory.**
-    ///
-    /// `Builder<256>` is faster but less accurate than `Builder<512>`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use b100m_filter::BloomFilter;
-    /// use fxhash::FxBuildHasher;
-    ///
-    /// let bloom = BloomFilter::builder256_with_hasher(16, FxBuildHasher::default()).hashes(8);
-    /// ```
-    pub fn builder256_with_hasher<S: BuildHasher>(num_blocks: usize, hasher: S) -> Builder<256, S> {
-        Self::new_builder_with_hasher::<256, S>(num_blocks, hasher)
-    }
-
-    /// Creates a new instance of `Builder` to construct a `BloomFilter`
     /// with `num_blocks` number of blocks for tracking item membership.
     /// **Each block is 128 bits of memory.**
     ///
@@ -219,26 +142,6 @@ impl BloomFilter {
     /// ```
     pub fn builder128(num_blocks: usize) -> Builder<128> {
         Self::new_builder::<128>(num_blocks)
-    }
-
-    /// Creates a new instance of `Builder` to construct a `BloomFilter`
-    /// with `num_blocks` number of blocks for tracking item membership,
-    /// and the specified hasher.
-    ///
-    /// **Each block is 128 bits of memory.**
-    ///
-    /// `Builder<128>` is faster but less accurate than `Builder<256>`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use b100m_filter::BloomFilter;
-    /// use fxhash::FxBuildHasher;
-    ///
-    /// let bloom = BloomFilter::builder128_with_hasher(16, FxBuildHasher::default()).hashes(8);
-    /// ```
-    pub fn builder128_with_hasher<S: BuildHasher>(num_blocks: usize, hasher: S) -> Builder<128, S> {
-        Self::new_builder_with_hasher::<128, S>(num_blocks, hasher)
     }
 
     /// Creates a new instance of `Builder` to construct a `BloomFilter`
@@ -257,37 +160,18 @@ impl BloomFilter {
     pub fn builder64(num_blocks: usize) -> Builder<64> {
         Self::new_builder::<64>(num_blocks)
     }
-
-    /// Creates a new instance of `Builder` to construct a `BloomFilter`
-    /// with `num_blocks` number of blocks for tracking item membership,
-    /// and the specified hasher.
-    ///
-    /// **Each block is 64 bits of memory.**
-    ///
-    /// `Builder<64>` is faster but less accurate than `Builder<128>`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use b100m_filter::BloomFilter;
-    /// use fxhash::FxBuildHasher;
-    ///
-    /// let bloom = BloomFilter::builder64_with_hasher(16, FxBuildHasher::default()).hashes(4);
-    /// ```
-    pub fn builder64_with_hasher<S: BuildHasher>(num_blocks: usize, hasher: S) -> Builder<64, S> {
-        Self::new_builder_with_hasher::<64, S>(num_blocks, hasher)
-    }
 }
 
 impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, S> {
-    /// Block size in u64s
-    const BLOCK_SIZE: usize = BLOCK_SIZE_BITS / 64;
-    /// Used to shift u64 index
-    const LOG2_BLOCK_SIZE: u32 = u32::ilog2(Self::BLOCK_SIZE as u32);
-    /// Used to calculate block index
-    const U32_MASK_LOWER: u64 = u64::MAX >> (Self::LOG2_BLOCK_SIZE + 32);
-
     const LOG2_BLOCK_SIZE_BITS: u32 = u32::ilog2(BLOCK_SIZE_BITS as u32);
+
+    /// Used to calculate block index
+    const BLOCK_MASK: u64 = {
+        let log2_block_size_u64s = Self::LOG2_BLOCK_SIZE_BITS - 6;
+        u64::MAX >> (32 + log2_block_size_u64s)
+    };
+    /// Used to calculate bit index inside a block
+    const BIT_MASK: u64 = (1 << Self::LOG2_BLOCK_SIZE_BITS) - 1;
 
     /// Number of coordinates (i.e. bits in our bloom filter) that can be derived by one hash.
     /// One hash is u64 bits, and we only need 9 bits (LOG2_U64_BITS + LOG2_BLOCK_SIZE) from
@@ -311,7 +195,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
 
     #[inline]
     fn optimal_hashes(num_items: usize) -> u64 {
-        let m = (u64::BITS as usize * Self::BLOCK_SIZE) as f64;
+        let m = BLOCK_SIZE_BITS as f64;
         let n = std::cmp::max(num_items, 1) as f64;
         let num_hashes = m / n * f64::ln(2.0f64);
         Self::floor_round(num_hashes)
@@ -321,16 +205,21 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     /// A more performant alternative to `hash % self.mem.len()`
     #[inline]
     fn block_index(&self, hash: u64) -> usize {
-        (((hash & Self::U32_MASK_LOWER) as usize * self.bits.len()) >> 32) as usize
+        (((hash & Self::BLOCK_MASK) as usize * self.bits.len()) >> 32) as usize
     }
 
-    /// Return a sequence of bit coordinates derived from a hash.
+    /// Return the bit indexes with a block for an item's two orginal hashes
     #[inline]
-    fn bit_indexes(h1: &mut u64, h2: &mut u64, seed: u64) -> impl Iterator<Item = u64> {
-        let h = seeded_hash_from_hashes(h1, h2, seed);
-        (0..Self::NUM_COORDS_PER_HASH).map(move |j| h.wrapping_shr(j * Self::LOG2_BLOCK_SIZE_BITS))
+    fn bit_indexes(hash1: &mut u64, hash2: &mut u64, seed: u64) -> impl Iterator<Item = u64> {
+        let h = seeded_hash_from_hashes(hash1, hash2, seed);
+        (0..Self::NUM_COORDS_PER_HASH).map(move |j| {
+            // shr: remove right bits from previous bit index (j - 1)
+            // and: remove left bits to keep bit index in range of a block's bit size
+            h.wrapping_shr(j * Self::LOG2_BLOCK_SIZE_BITS) & Self::BIT_MASK
+        })
     }
 
+    /// Returns all seeds that should be used by the hasher
     #[inline]
     fn hash_seeds(size: u64) -> impl Iterator<Item = u64> {
         (0..size).step_by(Self::NUM_COORDS_PER_HASH as usize)
@@ -373,8 +262,10 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
         let block = &self.bits.get_block(self.block_index(h1));
         Self::hash_seeds(self.num_hashes).into_iter().all(|i| {
-            self.bits
-                .check_all_for_block(block, Self::bit_indexes(&mut h1, &mut h2, i))
+            BlockedBitVector::<BLOCK_SIZE_BITS>::check_all_for_block(
+                block,
+                Self::bit_indexes(&mut h1, &mut h2, i),
+            )
         })
     }
 

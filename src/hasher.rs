@@ -2,7 +2,6 @@ use rand::Rng;
 use siphasher::sip::SipHasher13;
 use std::hash::{BuildHasher, Hasher};
 
-/// An implementation of `BuildHasher` that
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CloneBuildHasher<H: Hasher + Clone> {
     hasher: H,
