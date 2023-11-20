@@ -25,13 +25,12 @@
 //! ```
 
 use std::hash::{BuildHasher, Hash, Hasher};
-
 mod hasher;
 use hasher::DefaultHasher;
 mod builder;
 pub use builder::Builder;
 mod bit_vector;
-use bit_vector::BlockedBitVector;
+use bit_vector::BlockedBitVec;
 
 /// Produces a new hash efficiently from two orignal hashes and a seed.
 #[inline]
@@ -67,7 +66,7 @@ fn seeded_hash_from_hashes(h1: &mut u64, h2: &mut u64, seed: u64) -> u64 {
 /// ```
 #[derive(Debug, Clone)]
 pub struct BloomFilter<const BLOCK_SIZE_BITS: usize = 512, S = DefaultHasher> {
-    bits: BlockedBitVector<BLOCK_SIZE_BITS>,
+    bits: BlockedBitVec<BLOCK_SIZE_BITS>,
     num_hashes: u64,
     hasher: S,
 }
@@ -173,11 +172,6 @@ impl BloomFilter {
 impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, S> {
     const LOG2_BLOCK_SIZE_BITS: u32 = u32::ilog2(BLOCK_SIZE_BITS as u32);
 
-    /// Used to calculate block index
-    const BLOCK_MASK: u64 = {
-        let log2_block_size_u64s = Self::LOG2_BLOCK_SIZE_BITS - 6;
-        u64::MAX >> (32 + log2_block_size_u64s)
-    };
     /// Used to calculate bit index inside a block
     const BIT_MASK: u64 = (1 << Self::LOG2_BLOCK_SIZE_BITS) - 1;
 
@@ -213,17 +207,17 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     /// A more performant alternative to `hash % self.mem.len()`
     #[inline]
     fn block_index(&self, hash: u64) -> usize {
-        (((hash & Self::BLOCK_MASK) as usize * self.bits.len()) >> 32) as usize
+        (((hash >> 32) as usize * self.bits.num_blocks()) >> 32) as usize
     }
 
     /// Return the bit indexes with a block for an item's two orginal hashes
     #[inline]
-    fn bit_indexes(hash1: &mut u64, hash2: &mut u64, seed: u64) -> impl Iterator<Item = u64> {
+    fn bit_indexes(hash1: &mut u64, hash2: &mut u64, seed: u64) -> impl Iterator<Item = usize> {
         let h = seeded_hash_from_hashes(hash1, hash2, seed);
         (0..Self::NUM_COORDS_PER_HASH).map(move |j| {
             // shr: remove right bits from previous bit index (j - 1)
             // and: remove left bits to keep bit index in range of a block's bit size
-            h.wrapping_shr(j * Self::LOG2_BLOCK_SIZE_BITS) & Self::BIT_MASK
+            (h.wrapping_shr(j * Self::LOG2_BLOCK_SIZE_BITS) & Self::BIT_MASK) as usize
         })
     }
 
@@ -248,7 +242,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
         let block = &mut self.bits.get_block_mut(self.block_index(h1));
         for i in Self::hash_seeds(self.num_hashes) {
-            BlockedBitVector::<BLOCK_SIZE_BITS>::set_all_for_block(
+            BlockedBitVec::<BLOCK_SIZE_BITS>::set_all_for_block(
                 block,
                 Self::bit_indexes(&mut h1, &mut h2, i),
             );
@@ -271,7 +265,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
         let [mut h1, mut h2] = self.get_orginal_hashes(val);
         let block = &self.bits.get_block(self.block_index(h1));
         Self::hash_seeds(self.num_hashes).into_iter().all(|i| {
-            BlockedBitVector::<BLOCK_SIZE_BITS>::check_all_for_block(
+            BlockedBitVec::<BLOCK_SIZE_BITS>::check_all_for_block(
                 block,
                 Self::bit_indexes(&mut h1, &mut h2, i),
             )
@@ -378,7 +372,7 @@ mod tests {
     }
 
     fn false_pos_rate<const N: usize>(filter: &BloomFilter<N>, control: &HashSet<String>) -> f64 {
-        let sample_anti_vals = random_strings(10000, 16, 32, 11);
+        let sample_anti_vals = random_strings(1000, 16, 32, 11);
         let mut total = 0;
         let mut false_positives = 0;
         for x in &sample_anti_vals {

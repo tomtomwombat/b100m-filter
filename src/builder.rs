@@ -1,7 +1,4 @@
-use crate::BlockedBitVector;
-use crate::BloomFilter;
-use crate::BuildHasher;
-use crate::DefaultHasher;
+use crate::{BlockedBitVec, BloomFilter, BuildHasher, DefaultHasher};
 use std::hash::Hash;
 
 /// A bloom filter builder.
@@ -64,7 +61,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> Builder<BLOCK_SIZE_BITS, S> {
     /// ```
     pub fn hashes(self, num_hashes: u64) -> BloomFilter<BLOCK_SIZE_BITS, S> {
         BloomFilter {
-            bits: BlockedBitVector::<BLOCK_SIZE_BITS>::new(self.num_blocks),
+            bits: BlockedBitVec::<BLOCK_SIZE_BITS>::new(self.num_blocks).unwrap(),
             num_hashes,
             hasher: self.hasher,
         }
