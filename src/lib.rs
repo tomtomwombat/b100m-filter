@@ -1,5 +1,16 @@
-//! A very fast bloom filter for Rust.
-//! Implemented with L1 cache friendly blocks and efficient hashing.
+//! The fastest bloom filter in Rust. No accuracy compromises. Use any hasher.
+//!
+//! ## Background
+//! Bloom filters are space efficient approximate membership set data structure. False positives from `contains` are possible, but false negatives
+//! are not, i.e. `contains` for all items in the set is guaranteed to return true, while `contains` for all items not in the set probably return false.
+//!
+//! Blocked bloom filters are supported by an underlying bit vector, chunked into 512, 256, 128, or 64 bit "blocks", to track item membership.
+//! To insert, a number of bits, based on the item's hash, are set in the underlying bit vector. To check membership, a number of bits, based on the item's hash, are checked in the underlying bit vector.
+//!
+//! Once constructed, neither the bloom filter's underlying memory usage nor number of bits per item change.
+//!
+//! ## Implementation
+//! `b100m-filter` is blazingly fast because it uses L1 cache friendly blocks and efficiently derives many index bits from only one hash per value. Compared to traditional implementations, `b100m-filter` is 2-5 times faster for small sets of items, and hundreds of times faster for larger item sets. In all cases, `b100m-filter` maintains competitive false positive rates.
 //!
 //! # Examples
 //! Basic usage:
@@ -7,9 +18,8 @@
 //! use b100m_filter::BloomFilter;
 //!
 //! let num_blocks = 4; // by default, each block is 512 bits
-//! let values = vec!["42", "🦀"];
 //!
-//! let filter = BloomFilter::builder(num_blocks).items(values.iter());
+//! let filter = BloomFilter::builder(num_blocks).items(["42", "🦀"].iter());
 //! assert!(filter.contains("42"));
 //! assert!(filter.contains("🦀"));
 //! ```
@@ -19,10 +29,16 @@
 //! use ahash::RandomState;
 //!
 //! let num_blocks = 4; // by default, each block is 512 bits
-//! let values = vec!["42", "🦀"];
 //!
-//! let filter = BloomFilter::builder(num_blocks).hasher(RandomState::default()).items(values.iter());
+//! let filter = BloomFilter::builder(num_blocks)
+//!     .hasher(RandomState::default())
+//!     .items(["42", "🦀"].iter());
 //! ```
+//!
+//! ## References
+//! - [Bloom Filter](https://brilliant.org/wiki/bloom-filter/)
+//! - [Less hashing, same performance: Building a better Bloom filter](https://dl.acm.org/doi/10.5555/1400123.1400125)
+//! - [A fast alternative to the modulo reduction](https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/)
 
 use std::hash::{BuildHasher, Hash, Hasher};
 mod hasher;
@@ -33,6 +49,8 @@ mod bit_vector;
 use bit_vector::BlockedBitVec;
 
 /// Produces a new hash efficiently from two orignal hashes and a seed.
+///
+/// Modified from <https://dl.acm.org/doi/10.5555/1400123.1400125>.
 #[inline]
 fn seeded_hash_from_hashes(h1: &mut u64, h2: &mut u64, seed: u64) -> u64 {
     *h1 = h1.wrapping_add(*h2).rotate_left(5);
@@ -52,17 +70,26 @@ fn seeded_hash_from_hashes(h1: &mut u64, h2: &mut u64, seed: u64) -> u64 {
 /// Once constructed, neither the bloom filter's underlying memory usage nor number of bits per item change.
 ///
 /// # Examples
+/// Basic usage:
 /// ```
 /// use b100m_filter::BloomFilter;
 ///
-/// let num_blocks = 4; // the default for each block is 512 bits
-/// let values = vec!["42", "bloom"];
+/// let num_blocks = 4; // by default, each block is 512 bits
 ///
-/// let mut filter = BloomFilter::builder(num_blocks).items(values.iter());
-/// filter.insert("qwerty");
+/// let filter = BloomFilter::builder(num_blocks).items(["42", "🦀"].iter());
 /// assert!(filter.contains("42"));
-/// assert!(filter.contains("bloom"));
-/// assert!(filter.contains("qwerty"));
+/// assert!(filter.contains("🦀"));
+/// ```
+/// Use any hasher:
+/// ```
+/// use b100m_filter::BloomFilter;
+/// use ahash::RandomState;
+///
+/// let num_blocks = 4; // by default, each block is 512 bits
+///
+/// let filter = BloomFilter::builder(num_blocks)
+///     .hasher(RandomState::default())
+///     .items(["42", "🦀"].iter());
 /// ```
 #[derive(Debug, Clone)]
 pub struct BloomFilter<const BLOCK_SIZE_BITS: usize = 512, S = DefaultHasher> {
@@ -196,6 +223,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     }
 
     /// The optimal number of hashes to perform for an item given the expected number of items to be contained in one block.
+    /// Proof under "False Positives Analysis": <https://brilliant.org/wiki/bloom-filter/>
     #[inline]
     fn optimal_hashes(num_items: usize) -> u64 {
         let m = BLOCK_SIZE_BITS as f64;
@@ -206,7 +234,8 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
 
     /// Returns a the block index for an item's hash.
     /// The block index must be in the range `0..self.bits.num_blocks()`.
-    /// This implementation is a more performant alternative to `hash % self.bits.num_blocks()`.
+    /// This implementation is a more performant alternative to `hash % self.bits.num_blocks()`:
+    /// <https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/>
     #[inline]
     fn block_index(&self, hash: u64) -> usize {
         (((hash >> 32) as usize * self.bits.num_blocks()) >> 32) as usize
@@ -290,7 +319,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     /// The first two hashes of the value to be inserted or checked.
     ///
     /// Subsequent hashes are efficiently derived from these two using `seeded_hash_from_hashes`,
-    /// generating many "random" values for the single value.
+    /// generating many "seeded hashes" values for the single value.
     #[inline]
     fn get_orginal_hashes(&self, val: &(impl Hash + ?Sized)) -> [u64; 2] {
         let mut state = self.hasher.build_hasher();
