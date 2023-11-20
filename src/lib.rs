@@ -195,6 +195,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
         }
     }
 
+    /// The optimal number of hashes to perform for an item given the expected number of items to be contained in one block.
     #[inline]
     fn optimal_hashes(num_items: usize) -> u64 {
         let m = BLOCK_SIZE_BITS as f64;
@@ -203,14 +204,15 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
         Self::floor_round(num_hashes)
     }
 
-    /// Returns a `usize` within the range of `0..self.mem.len()`
-    /// A more performant alternative to `hash % self.mem.len()`
+    /// Returns a the block index for an item's hash.
+    /// The block index must be in the range `0..self.bits.num_blocks()`.
+    /// This implementation is a more performant alternative to `hash % self.bits.num_blocks()`.
     #[inline]
     fn block_index(&self, hash: u64) -> usize {
         (((hash >> 32) as usize * self.bits.num_blocks()) >> 32) as usize
     }
 
-    /// Return the bit indexes with a block for an item's two orginal hashes
+    /// Return the bit indexes within a block for an item's two orginal hashes
     #[inline]
     fn bit_indexes(hash1: &mut u64, hash2: &mut u64, seed: u64) -> impl Iterator<Item = usize> {
         let h = seeded_hash_from_hashes(hash1, hash2, seed);
