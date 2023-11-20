@@ -215,7 +215,8 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     /// Return the bit indexes within a block for an item's two orginal hashes.
     ///
     /// First, a seeded hash is derived from two orginal hashes, `hash1` and `hash2`.
-    /// Second, the hash's bits are split into sections.
+    /// Second, `Self::NUM_COORDS_PER_HASH` bit indexes are returned, each `Self::BIT_INDEX_MASK_LEN`
+    /// consecutive sections of the hash bits.
     #[inline]
     fn bit_indexes(hash1: &mut u64, hash2: &mut u64, seed: u64) -> impl Iterator<Item = usize> {
         let h = seeded_hash_from_hashes(hash1, hash2, seed);
