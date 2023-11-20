@@ -170,10 +170,10 @@ impl BloomFilter {
 }
 
 impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, S> {
-    const LOG2_BLOCK_SIZE_BITS: u32 = u32::ilog2(BLOCK_SIZE_BITS as u32);
+    const BIT_INDEX_MASK_LEN: u32 = u32::ilog2(BLOCK_SIZE_BITS as u32);
 
-    /// Used to calculate bit index inside a block
-    const BIT_MASK: u64 = (1 << Self::LOG2_BLOCK_SIZE_BITS) - 1;
+    /// Used to grab the last N bits from a hash.
+    const BIT_INDEX_MASK: u64 = (1 << Self::BIT_INDEX_MASK_LEN) - 1;
 
     /// Number of coordinates (i.e. bits in our bloom filter) that can be derived by one hash.
     /// One hash is u64 bits, and we only need 9 bits (LOG2_U64_BITS + LOG2_BLOCK_SIZE) from
@@ -182,7 +182,7 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
     ///
     /// From experiments, powers of 2 coordinates from the hash provides the best performance
     /// for `contains` for existing and non-existing values.
-    const NUM_COORDS_PER_HASH: u32 = 2u32.pow(u32::ilog2(64 / Self::LOG2_BLOCK_SIZE_BITS));
+    const NUM_COORDS_PER_HASH: u32 = 2u32.pow(u32::ilog2(64 / Self::BIT_INDEX_MASK_LEN));
 
     #[inline]
     fn floor_round(x: f64) -> u64 {
@@ -212,14 +212,17 @@ impl<const BLOCK_SIZE_BITS: usize, S: BuildHasher> BloomFilter<BLOCK_SIZE_BITS, 
         (((hash >> 32) as usize * self.bits.num_blocks()) >> 32) as usize
     }
 
-    /// Return the bit indexes within a block for an item's two orginal hashes
+    /// Return the bit indexes within a block for an item's two orginal hashes.
+    ///
+    /// First, a seeded hash is derived from two orginal hashes, `hash1` and `hash2`.
+    /// Second, the hash's bits are split into sections.
     #[inline]
     fn bit_indexes(hash1: &mut u64, hash2: &mut u64, seed: u64) -> impl Iterator<Item = usize> {
         let h = seeded_hash_from_hashes(hash1, hash2, seed);
         (0..Self::NUM_COORDS_PER_HASH).map(move |j| {
-            // shr: remove right bits from previous bit index (j - 1)
-            // and: remove left bits to keep bit index in range of a block's bit size
-            (h.wrapping_shr(j * Self::LOG2_BLOCK_SIZE_BITS) & Self::BIT_MASK) as usize
+            let mut bit_index = h.wrapping_shr(j * Self::BIT_INDEX_MASK_LEN); // remove right bits from previous bit index (j - 1)
+            bit_index &= Self::BIT_INDEX_MASK; // remove left bits to keep bit index in range of a block's bit size
+            bit_index as usize
         })
     }
 
