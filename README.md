@@ -80,7 +80,7 @@ Runtime comparison to other bloom filter crates:
 
 `b100m-filter` scales very well.
 
-As the number of bits and set size increase, traditional bloom filters need to perform more hashes per item to keep false positive rates low. However, `b100m-filter`'s optimal number of hashes is bounded while keeping near zero rates even for many items:
+As the number of bits and set size increase, traditional bloom filters need to perform more hashes per item to optimize false positive rates. However, `b100m-filter`'s optimal number of hashes is bounded while keeping near zero rates even for many items:
 > ![bloom_perf](https://github.com/thomaspendock/bloom-filter/assets/45644087/ebe424cf-d8f1-4401-ac10-a4879123565f)
 >
 > Bloom filter speed is directly proportional to number of hashes.
